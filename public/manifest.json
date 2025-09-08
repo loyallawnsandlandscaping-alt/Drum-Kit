@@ -1,0 +1,9 @@
+{
+  "name": "DrumKit MVP",
+  "short_name": "DrumKit",
+  "display": "standalone",
+  "start_url": "/",
+  "background_color": "#0b0c10",
+  "theme_color": "#0b0c10",
+  "icons": []
+}

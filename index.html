@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>DrumKit MVP</title>
+  <link rel="manifest" href="/manifest.json" />
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/service-worker.js');
+    }
+  </script>
+  <style>
+    body { margin:0; font-family:system-ui,sans-serif; background:#0b0c10; color:#e7e7ea; }
+    header { padding:12px; background:#161824; color:#fff; display:flex; justify-content:space-between; }
+    main { padding:16px; max-width:1000px; margin:auto; }
+    .btn { background:#1c2333; color:#fff; border:1px solid #242a3c; padding:8px 14px; border-radius:999px; cursor:pointer; }
+    #stage { position:relative; width:100%; height:480px; background:#000; margin:16px 0; overflow:hidden; }
+    .pad { position:absolute; border:2px solid red; border-radius:8px; background:rgba(255,0,0,0.1); color:#fff; display:flex; align-items:center; justify-content:center; cursor:move; }
+    .row { display:flex; align-items:center; gap:6px; margin:4px 0; flex-wrap:wrap; }
+    .pill { font-size:12px; background:#121831; border:1px solid #263057; border-radius:999px; padding:2px 8px; }
+    select, input { padding:4px; border-radius:6px; border:1px solid #333; background:#0f1220; color:#fff; }
+  </style>
+</head>
+<body>
+  <header>
+    <strong>🥁 DrumKit MVP</strong>
+    <div>
+      <button id="loginBtn" class="btn">Sign In</button>
+      <button id="logoutBtn" class="btn" style="display:none">Sign Out</button>
+    </div>
+  </header>
+  <main>
+    <div class="row">
+      <input type="file" id="photoInput" accept="image/*" />
+      <button id="detectBtn" class="btn">Detect Objects</button>
+      <button id="recordBtn" class="btn">● Record</button>
+      <button id="stopBtn" class="btn">■ Stop</button>
+    </div>
+    <div id="stage"></div>
+    <h3>Looper</h3>
+    <div id="looper"></div>
+  </main>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
+

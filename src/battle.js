@@ -1,4 +1,4 @@
-// Battle state machine using call.js data channel
+// UPDATED battle.js (adds battle logic, keeps pad + recorder integration)
 import { send, onMessage } from "./call.js";
 
 let you = 0;
@@ -32,6 +32,7 @@ function tick() {
   }
 }
 
+// --- PUBLIC API ---
 export function startBattle(seconds = 60) {
   if (active) stopBattle();
   you = 0; opp = 0; setScores();
@@ -41,7 +42,6 @@ export function startBattle(seconds = 60) {
   const s = statusEl(); if (s) s.textContent = "battle: live";
   if (timerId) clearTimeout(timerId);
   tick();
-  // announce
   send({ type: "battle:start", seconds });
 }
 
@@ -61,12 +61,11 @@ export function registerLocalHit(padId) {
   send({ type: "hit", padId, t: Date.now() });
 }
 
-// incoming messages
+// --- Incoming sync messages ---
 onMessage((msg) => {
   if (!msg || typeof msg !== "object") return;
   switch (msg.type) {
-    case "battle:start": {
-      // sync start if remote starts first
+    case "battle:start":
       if (!active) {
         you = 0; opp = 0; setScores();
         endAt = performance.now() + (msg.seconds || 60) * 1000;
@@ -76,7 +75,6 @@ onMessage((msg) => {
         tick();
       }
       break;
-    }
     case "battle:stop":
       if (active) stopBattle();
       break;

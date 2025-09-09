@@ -1,93 +1,112 @@
 import { supabase } from "./lib/supabase";
-import { loadAll, play } from "./audio";
+import { play, loadAll } from "./audio";
 
-const authDiv = document.getElementById("auth")!;
-const appDiv = document.getElementById("app")!;
-const loginBtn = document.getElementById("loginBtn")!;
-const signupBtn = document.getElementById("signupBtn")!;
-const logoutBtn = document.getElementById("logoutBtn")!;
-const startCallBtn = document.getElementById("startCallBtn")!;
-
-const emailInput = document.getElementById("email") as HTMLInputElement;
-const passwordInput = document.getElementById("password") as HTMLInputElement;
-
-const padsDiv = document.getElementById("pads")!;
-const localVideo = document.getElementById("localVideo") as HTMLVideoElement;
-const remoteVideo = document.getElementById("remoteVideo") as HTMLVideoElement;
-
-// Preload samples from /public
-const samples: Record<string, string> = {
-  "Kick": "/kick-1.wav",
-  "DeepKick": "/deepkick.wav",
-  "Snare": "/snare-1.wav",
-  "Clap": "/clap-1.wav",
-  "OpenHat": "/openhat.wav",
-  "ClosedHat": "/closedhat-1.wav",
-  "Tom1": "/tom-1.wav",
-  "Tom2": "/tom-2.wav",
+// Map sound names to file paths
+const sounds: Record<string, string> = {
+  kick: "/public/kick-1.wav",
+  snare: "/public/snare-1.wav",
+  tom1: "/public/tom-1.wav",
+  tom2: "/public/tom-2.wav",
+  hihat: "/public/closedhat-1.wav",
+  openhat: "/public/openhat.wav",
+  clap: "/public/clap-1.wav",
+  clapFat: "/public/clap-fat.wav",
+  deepkick: "/public/deepkick.wav"
 };
-await loadAll(samples);
 
-// Auth handlers
+// State
+let assigned: Record<string, string> = {};
+let localStream: MediaStream | null = null;
+let peer: RTCPeerConnection | null = null;
+
+// UI Elements
+const loginDiv = document.getElementById("login")!;
+const emailInput = document.getElementById("email") as HTMLInputElement;
+const loginBtn = document.getElementById("login-btn")!;
+const cameraDiv = document.getElementById("camera-container")!;
+const controlsDiv = document.getElementById("controls")!;
+const callDiv = document.getElementById("call-container")!;
+
+const localVideo = document.getElementById("localVideo") as HTMLVideoElement;
+const selfView = document.getElementById("selfView") as HTMLVideoElement;
+const remoteView = document.getElementById("remoteView") as HTMLVideoElement;
+
+const assignBtn = document.getElementById("assign-btn")!;
+const recordBtn = document.getElementById("record-btn")!;
+const callBtn = document.getElementById("call-btn")!;
+
+// --- Auth ---
 loginBtn.addEventListener("click", async () => {
-  const { error } = await supabase.auth.signInWithPassword({
+  const { error } = await supabase.auth.signInWithOtp({
     email: emailInput.value,
-    password: passwordInput.value,
   });
-  if (error) alert(error.message);
-});
-signupBtn.addEventListener("click", async () => {
-  const { error } = await supabase.auth.signUp({
-    email: emailInput.value,
-    password: passwordInput.value,
-  });
-  if (error) alert(error.message);
-});
-logoutBtn.addEventListener("click", async () => {
-  await supabase.auth.signOut();
-});
-
-// Watch auth state
-supabase.auth.onAuthStateChange((_event, session) => {
-  if (session) {
-    authDiv.style.display = "none";
-    appDiv.style.display = "block";
-    initPads();
-    initMedia();
-  } else {
-    authDiv.style.display = "block";
-    appDiv.style.display = "none";
+  if (error) alert("Login error: " + error.message);
+  else {
+    loginDiv.classList.add("hidden");
+    cameraDiv.classList.remove("hidden");
+    controlsDiv.classList.remove("hidden");
+    startCamera();
+    await loadAll(sounds);
   }
 });
 
-// Pad setup
-function initPads() {
-  padsDiv.innerHTML = "";
-  Object.entries(samples).forEach(([name]) => {
-    const div = document.createElement("div");
-    div.className = "pad";
-    div.textContent = name;
-    div.onclick = () => play(name);
-    padsDiv.appendChild(div);
-  });
+// --- Camera ---
+async function startCamera() {
+  localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+  localVideo.srcObject = localStream;
+  selfView.srcObject = localStream;
 }
 
-// Media + WebRTC
-let pc: RTCPeerConnection;
-async function initMedia() {
-  const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-  localVideo.srcObject = stream;
+// --- Assign sound to object copy ---
+assignBtn.addEventListener("click", () => {
+  const available = Object.keys(sounds).filter(s => !Object.values(assigned).includes(s));
+  if (available.length === 0) {
+    alert("All sounds already assigned!");
+    return;
+  }
+  // Fake "object copy" id for now
+  const copyId = "copy-" + (Object.keys(assigned).length + 1);
+  assigned[copyId] = available[0];
+  alert(`Assigned ${available[0]} to ${copyId}`);
+});
 
-  pc = new RTCPeerConnection();
-  stream.getTracks().forEach(t => pc.addTrack(t, stream));
-  pc.ontrack = e => { remoteVideo.srcObject = e.streams[0]; };
-
-  startCallBtn.addEventListener("click", startCall);
+// --- Collision simulation ---
+function simulateCollision(copyId: string) {
+  const sound = assigned[copyId];
+  if (sound) play(sound);
 }
 
-// For demo only (head-to-head signaling needs Supabase RLS table or WebSocket later)
-async function startCall() {
-  const offer = await pc.createOffer();
-  await pc.setLocalDescription(offer);
-  alert("Call started. Signaling not implemented yet.");
-}
+// --- Loop recording ---
+let recording: string[] = [];
+recordBtn.addEventListener("click", () => {
+  if (recording.length > 0) {
+    alert("Stopping loop.");
+    recording = [];
+  } else {
+    alert("Recording a loop. Trigger some collisions!");
+    // Simulate capturing collisions
+    setInterval(() => {
+      if (Object.keys(assigned).length > 0) {
+        const copyId = Object.keys(assigned)[Math.floor(Math.random() * Object.keys(assigned).length)];
+        simulateCollision(copyId);
+        recording.push(copyId);
+      }
+    }, 500);
+  }
+});
+
+// --- WebRTC Call ---
+callBtn.addEventListener("click", async () => {
+  peer = new RTCPeerConnection();
+  localStream?.getTracks().forEach(track => peer!.addTrack(track, localStream!));
+
+  peer.ontrack = (event) => {
+    remoteView.srcObject = event.streams[0];
+  };
+
+  const offer = await peer.createOffer();
+  await peer.setLocalDescription(offer);
+
+  // NOTE: Here we’d push offer/answer through Supabase Realtime
+  console.log("Offer created:", offer.sdp?.substring(0, 60));
+});

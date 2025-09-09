@@ -1,60 +1,89 @@
-export class Battle {
-  constructor(sendFn, ui) {
-    this.send = sendFn;
-    this.ui = ui;
-    this.you = 0;
-    this.opp = 0;
-    this.len = 30;
-    this.timer = null;
-    this.endAt = 0;
-    this.active = false;
-  }
-  connected() {
-    this.ui.status("connected");
-  }
-  ring() {
-    this.ui.status("ringing…");
-  }
-  start() {
-    this.you = 0; this.opp = 0;
-    this.active = false;
-    this.ui.setScores(this.you, this.opp);
-    let c = 3;
-    this.ui.timer(c.toString());
-    const cd = setInterval(() => {
-      c -= 1;
-      if (c <= 0) {
-        clearInterval(cd);
-        this.active = true;
-        this.endAt = performance.now() + this.len * 1000;
-        this.loop();
-      } else {
-        this.ui.timer(c.toString());
-      }
-    }, 1000);
-  }
-  loop() {
-    if (!this.active) return;
-    const rem = Math.max(0, Math.ceil((this.endAt - performance.now()) / 1000));
-    this.ui.timer(rem.toString());
-    if (rem <= 0) {
-      this.active = false;
-      this.ui.timer("done");
-      return;
-    }
-    requestAnimationFrame(() => this.loop());
-  }
-  localHit() {
-    if (!this.active) return;
-    this.you += 1;
-    this.ui.setScores(this.you, this.opp);
-    this.send({ t: "hit" });
-  }
-  remoteData(obj) {
-    if (obj.t === "hit") {
-      if (!this.active) return;
-      this.opp += 1;
-      this.ui.setScores(this.you, this.opp);
-    }
+// Battle state machine using call.js data channel
+import { send, onMessage } from "./call.js";
+
+let you = 0;
+let opp = 0;
+let timerId = 0;
+let endAt = 0;
+let active = false;
+
+const youEl = () => document.getElementById("youScore");
+const oppEl = () => document.getElementById("oppScore");
+const tEl   = () => document.getElementById("battleTimer");
+const statusEl = () => document.getElementById("callStatus");
+
+function setScores() {
+  const a = youEl(); if (a) a.textContent = String(you);
+  const b = oppEl(); if (b) b.textContent = String(opp);
+}
+
+function setTimer(sec) {
+  const t = tEl();
+  if (t) t.textContent = sec < 0 ? "--" : String(sec);
+}
+
+function tick() {
+  const remain = Math.max(0, Math.ceil((endAt - performance.now()) / 1000));
+  setTimer(remain);
+  if (remain <= 0) {
+    stopBattle();
+  } else {
+    timerId = window.setTimeout(tick, 250);
   }
 }
+
+export function startBattle(seconds = 60) {
+  if (active) stopBattle();
+  you = 0; opp = 0; setScores();
+  endAt = performance.now() + seconds * 1000;
+  setTimer(seconds);
+  active = true;
+  const s = statusEl(); if (s) s.textContent = "battle: live";
+  if (timerId) clearTimeout(timerId);
+  tick();
+  // announce
+  send({ type: "battle:start", seconds });
+}
+
+export function stopBattle() {
+  active = false;
+  if (timerId) clearTimeout(timerId);
+  timerId = 0;
+  setTimer(-1);
+  const s = statusEl(); if (s) s.textContent = "battle: ended";
+  send({ type: "battle:stop" });
+}
+
+export function registerLocalHit(padId) {
+  if (!active) return;
+  you++;
+  setScores();
+  send({ type: "hit", padId, t: Date.now() });
+}
+
+// incoming messages
+onMessage((msg) => {
+  if (!msg || typeof msg !== "object") return;
+  switch (msg.type) {
+    case "battle:start": {
+      // sync start if remote starts first
+      if (!active) {
+        you = 0; opp = 0; setScores();
+        endAt = performance.now() + (msg.seconds || 60) * 1000;
+        active = true;
+        const s = statusEl(); if (s) s.textContent = "battle: live";
+        if (timerId) clearTimeout(timerId);
+        tick();
+      }
+      break;
+    }
+    case "battle:stop":
+      if (active) stopBattle();
+      break;
+    case "hit":
+      if (!active) return;
+      opp++;
+      setScores();
+      break;
+  }
+});

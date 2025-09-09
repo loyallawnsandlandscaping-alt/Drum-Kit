@@ -7,111 +7,162 @@
   <meta name="theme-color" content="#0a0a0a" />
   <link rel="manifest" href="/manifest.json" />
   <style>
-    :root{
-      --bg:#0b0c10;--card:#161824;--muted:#9aa0a6;--text:#e7e7ea;--br:16px;
-      --stroke:#23283b; --accent:#5ea4d4; --accent2:#c36bff;
+    :root {
+      --bg: #0b0c10;
+      --card: #161824;
+      --muted: #9aa0a6;
+      --text: #e7e7ea;
+      --accent: #5eead4;
+      --br: 16px;
     }
-    *{box-sizing:border-box}
-    html,body{height:100%}
-    body{
-      margin:0;
-      font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Arial,"Noto Sans","Helvetica Neue",sans-serif;
-      background:radial-gradient(1200px 800px at 80% -10%,#1a1f2e 0%,#0b0c10 40%),var(--bg);
-      color:var(--text);
-    }
-    header{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;position:sticky;top:0;z-index:3;backdrop-filter:blur(6px)}
-    header h1{font-size:18px;margin:0;letter-spacing:.4px}
-    main{max-width:1100px;margin:18px auto;padding:0 12px 24px}
-    .grid{display:grid;gap:12px;grid-template-columns:repeat(12,1fr)}
-    .card{grid-column:span 12;background:var(--card);border:1px solid var(--stroke);border-radius:var(--br);padding:14px;box-shadow:0 10px 40px rgba(0,0,0,.30)}
-    @media(min-width:860px){.span-6{grid-column:span 6}.span-4{grid-column:span 4}.span-8{grid-column:span 8}}
-    h2{margin:6px 0 10px;font-size:16px}
-    input,button,select{border-radius:12px;border:1px solid var(--stroke);background:#0f1220;color:var(--text);padding:10px 12px}
-    button{cursor:pointer}
-    .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-    .muted{color:var(--muted);font-size:12px}
-    .pill{font-size:11px;padding:4px 8px;border-radius:999px;background:#121831;border:1px solid #263057;color:#a8b4ff}
-    /* Drum “pad” area */
-    #padArea{position:relative;min-height:360px;border:1px dashed var(--stroke);border-radius:12px;background:#0e1020}
-    .pad{
-      position:absolute; min-width:84px; min-height:56px; padding:8px 10px;
-      border-radius:12px; border:1px solid #2b3150; background:linear-gradient(180deg,#181d33,#12172a);
-      display:flex; flex-direction:column; gap:6px; user-select:none; cursor:grab;
-    }
-    .pad:active{cursor:grabbing}
-    .pad .title{font-weight:600}
-    .pad button{padding:6px 8px; font-size:12px}
-    /* Video preview */
-    #localVid{transform:scaleX(-1)} /* selfie preview */
-    video, canvas { background:#000; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); }
+
+    header { padding: 0.5rem 1rem; background: var(--card); display: flex; justify-content: space-between; align-items: center; }
+    header h1 { font-size: 1.25rem; margin: 0; }
+
+    main { display: flex; flex-direction: column; align-items: center; padding: 1rem; gap: 1rem; }
+
+    /* Video layout */
+    #videos { display: flex; justify-content: center; align-items: center; gap: 1rem; width: 100%; }
+    #localVideo { width: 70%; border-radius: var(--br); background: black; }
+    #remoteVideo { width: 25%; border-radius: var(--br); background: black; }
+
+    /* Pads area */
+    #pads { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-top: 1rem; justify-content: center; }
+    .pad { width: 100px; height: 100px; background: var(--card); border-radius: var(--br); display: flex; justify-content: center; align-items: center; cursor: pointer; user-select: none; }
+    .pad.assigned { border: 2px solid var(--accent); }
+
+    /* Auth */
+    #auth { display: flex; flex-direction: column; gap: 0.5rem; max-width: 300px; margin: auto; }
+    input, button { padding: 0.5rem; border-radius: var(--br); border: none; }
+    button { background: var(--accent); color: black; font-weight: bold; cursor: pointer; }
+
+    /* Controls */
+    #controls { display: flex; gap: 0.5rem; flex-wrap: wrap; justify-content: center; }
   </style>
 </head>
 <body>
   <header>
-    <h1>DJ DrumKit • PWA</h1>
-    <div class="row">
-      <span id="authState" class="muted">Signed out</span>
-      <button id="signInBtn">Sign in</button>
-      <button id="signOutBtn" style="display:none">Sign out</button>
+    <h1>🥁 DJ DrumKit</h1>
+    <div>
+      <button id="loginBtn">Login</button>
+      <button id="logoutBtn" style="display:none;">Logout</button>
     </div>
   </header>
 
-  <main class="grid">
-    <!-- Left: Pads / Controls -->
-    <section class="card span-8">
-      <h2>Playground</h2>
-      <div class="row" style="margin-bottom:8px">
-        <button id="addPad">Add Pad</button>
-        <button id="saveScene">Save Scene</button>
-        <button id="clearScene">Clear Scene</button>
-        <span class="muted">Drag pads. Click to assign sound. “Loop” to repeat.</span>
-      </div>
-      <div id="padArea"></div>
-    </section>
+  <main>
+    <!-- Auth form -->
+    <div id="auth" style="display:none;">
+      <input type="email" id="email" placeholder="Email" />
+      <input type="password" id="password" placeholder="Password" />
+      <button id="doLogin">Login / Sign Up</button>
+    </div>
 
-    <!-- Right: Call + Record -->
-    <section class="card span-4">
-      <h2>Call & Record</h2>
+    <!-- Videos -->
+    <div id="videos">
+      <video id="localVideo" autoplay muted playsinline></video>
+      <video id="remoteVideo" autoplay playsinline></video>
+    </div>
 
-      <div class="row" style="margin-bottom:8px">
-        <input id="roomInput" placeholder="Room code (e.g., dj-123)" style="flex:1;min-width:160px">
-        <button id="callBtn">Call</button>
-        <button id="hangupBtn" disabled>Hang up</button>
-      </div>
+    <!-- Pads -->
+    <div id="pads"></div>
 
-      <div class="row" style="gap:10px;margin-bottom:8px">
-        <video id="localVid" autoplay muted playsinline style="width:160px;border-radius:12px"></video>
-        <video id="remoteVid" autoplay playsinline style="width:160px;border-radius:12px"></video>
-      </div>
-
-      <canvas id="mixCanvas" width="640" height="360" style="width:100%;border:1px solid var(--stroke);border-radius:12px"></canvas>
-
-      <div class="row" style="margin-top:8px">
-        <button id="startAV">Start Video Rec</button>
-        <button id="stopAV" disabled>Stop Video Rec</button>
-        <button id="shareAV" disabled>Share</button>
-      </div>
-
-      <div class="muted" style="margin-top:8px">
-        Tip: Each person sees their own camera large; the other appears as PiP.
-      </div>
-    </section>
-
-    <!-- Audio tags (hidden/local muted) -->
-    <audio id="localAudio" autoplay muted playsinline></audio>
-    <audio id="remoteAudio" autoplay playsinline></audio>
+    <!-- Controls -->
+    <div id="controls">
+      <input id="room" placeholder="Room name" />
+      <button id="callBtn">Call</button>
+      <button id="answerBtn">Answer</button>
+      <button id="hangupBtn">Hang Up</button>
+      <button id="saveBtn">Save Scene</button>
+      <button id="loadBtn">Load Scene</button>
+      <button id="recordBtn">Start Recording</button>
+      <button id="stopRecordBtn">Stop Recording</button>
+    </div>
   </main>
 
-  <!-- PWA SW (very light cache safety) -->
-  <script>
-  (function(){
-    if('serviceWorker' in navigator){
-      navigator.serviceWorker.register('/service-worker.js').catch(()=>{});
-    }
-  })();
-  </script>
+  <script type="module">
+    import { supabase } from "./src/lib/supabase.ts";
+    import { call, waitForCall, hangup, initLocalMedia, getLocalStream, getRemoteStream } from "./src/lib/rtc.ts";
+    import { saveScene, loadLatestScene } from "./src/lib/sessions.ts";
+    import { startRecording, stopRecording } from "./src/lib/recorder.ts";
+    import { loadAll, play } from "./src/audio.ts";
 
-  <!-- App entry (Vite) -->
-  <script type="module" src="/src/main.ts"></script>
+    // ---------- Auth ----------
+    const loginBtn = document.getElementById("loginBtn");
+    const logoutBtn = document.getElementById("logoutBtn");
+    const authForm = document.getElementById("auth");
+
+    loginBtn.onclick = () => authForm.style.display = "flex";
+    logoutBtn.onclick = async () => { await supabase.auth.signOut(); logoutBtn.style.display="none"; loginBtn.style.display="inline"; };
+
+    document.getElementById("doLogin").onclick = async () => {
+      const email = document.getElementById("email").value;
+      const pw = document.getElementById("password").value;
+      const { error } = await supabase.auth.signUp({ email, password: pw });
+      if (error && error.message.includes("already")) {
+        await supabase.auth.signInWithPassword({ email, password: pw });
+      }
+      authForm.style.display = "none";
+      loginBtn.style.display = "none";
+      logoutBtn.style.display = "inline";
+    };
+
+    // ---------- Video ----------
+    const localVideo = document.getElementById("localVideo");
+    const remoteVideo = document.getElementById("remoteVideo");
+
+    const localStream = await initLocalMedia();
+    localVideo.srcObject = localStream;
+
+    function attachRemote(stream) {
+      remoteVideo.srcObject = stream;
+    }
+
+    document.getElementById("callBtn").onclick = () => {
+      const room = document.getElementById("room").value || "default";
+      call(room, attachRemote);
+    };
+    document.getElementById("answerBtn").onclick = () => {
+      const room = document.getElementById("room").value || "default";
+      waitForCall(room, attachRemote);
+    };
+    document.getElementById("hangupBtn").onclick = hangup;
+
+    // ---------- Pads ----------
+    const padNames = ["snare-1.wav","kick-1.wav","deepkick.wav","tom-1.wav","tom-2.wav","clap-1.wav","clap-fat.wav","openhat.wav","closedhat-1.wav"];
+    const padMap = Object.fromEntries(padNames.map(n => [n, `/public/${n}`]));
+    await loadAll(padMap);
+
+    const pads = document.getElementById("pads");
+    padNames.forEach(name => {
+      const div = document.createElement("div");
+      div.className = "pad";
+      div.textContent = name.split(".")[0];
+      div.onclick = () => play(name);
+      pads.appendChild(div);
+    });
+
+    // ---------- Save/Load ----------
+    document.getElementById("saveBtn").onclick = async () => {
+      await saveScene({ pads: padNames });
+      alert("Scene saved!");
+    };
+    document.getElementById("loadBtn").onclick = async () => {
+      const scene = await loadLatestScene();
+      if (scene) alert("Scene loaded: " + JSON.stringify(scene));
+      else alert("No saved scene.");
+    };
+
+    // ---------- Recording ----------
+    document.getElementById("recordBtn").onclick = () => {
+      startRecording(getLocalStream());
+      alert("Recording started!");
+    };
+    document.getElementById("stopRecordBtn").onclick = async () => {
+      const file = await stopRecording();
+      alert("Recording saved as " + file.name);
+    };
+  </script>
 </body>
 </html>

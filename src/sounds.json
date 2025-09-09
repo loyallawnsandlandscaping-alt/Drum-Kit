@@ -1,0 +1,11 @@
+[
+  { "id": "clap-1", "name": "Clap 1", "file": "clap-1.wav", "group": "free" },
+  { "id": "clap-fat", "name": "Clap Fat", "file": "clap-fat.wav", "group": "free" },
+  { "id": "closedhat-1", "name": "Closed Hat 1", "file": "closedhat-1.wav", "group": "free" },
+  { "id": "deepkick", "name": "Deep Kick", "file": "deepkick.wav", "group": "free" },
+  { "id": "kick-1", "name": "Kick 1", "file": "kick-1.wav", "group": "free" },
+  { "id": "openhat", "name": "Open Hat", "file": "openhat.wav", "group": "paid" },
+  { "id": "snare-1", "name": "Snare 1", "file": "snare-1.wav", "group": "paid" },
+  { "id": "tom-1", "name": "Tom 1", "file": "tom-1.wav", "group": "paid" },
+  { "id": "tom-2", "name": "Tom 2", "file": "tom-2.wav", "group": "paid" }
+]

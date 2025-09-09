@@ -12,22 +12,22 @@
   <!-- PWA -->
   <link rel="manifest" href="/manifest.json" />
 
-  <!-- Icons (ADDED; does not replace/remove other features) -->
+  <!-- Icons (final) -->
   <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png" />
   <link rel="icon" type="image/png" sizes="512x512" href="/icons/icon-512.png" />
   <link rel="apple-touch-icon" href="/icons/icon-192.png" />
 
-  <!-- Styles (kept) -->
+  <!-- Styles -->
   <link rel="stylesheet" href="/styles.css" />
 
-  <!-- Models (kept; capture-only detection in app code) -->
+  <!-- Models (COCO-SSD loaded; inference initiated by Capture in app code) -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0/dist/tf.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.2"></script>
 </head>
 <body>
   <noscript>This app requires JavaScript enabled.</noscript>
 
-  <!-- ===== Header (kept) ===== -->
+  <!-- ===== Header ===== -->
   <header>
     <div class="brand">
       <div class="logo"></div>
@@ -40,9 +40,9 @@
     </div>
   </header>
 
-  <!-- ===== Main layout (kept) ===== -->
+  <!-- ===== Main ===== -->
   <main class="panel">
-    <!-- === Column: Camera & Detection (kept) === -->
+    <!-- === Camera & Detection === -->
     <section class="card" id="cameraSection">
       <h3>Camera & Detection</h3>
 
@@ -63,7 +63,7 @@
       <div class="detected-list" id="detectedList"></div>
     </section>
 
-    <!-- === Column: Playground / Pads (kept) === -->
+    <!-- === Playground / Pads === -->
     <section class="card" id="playgroundSection">
       <h3>Playground (Motion-triggered)</h3>
 
@@ -84,7 +84,7 @@
       <div id="dupeArea" class="dupe-area" aria-label="Duplicated pads area"></div>
     </section>
 
-    <!-- === Column: Call & Battle + Settings (kept) === -->
+    <!-- === Call & Battle + Settings === -->
     <section class="card" id="callBattleSection">
       <h3>Call & Battle</h3>
 
@@ -136,23 +136,23 @@
 
       <h4>About</h4>
       <small>
-        Screen-space motion collisions; detection runs on Capture; one duplicate per object; only duplicates play.
+        Any object can trigger; detection runs on Capture; motion crossing pad edge fires hit; one duplicate per object; only duplicates play.
       </small>
     </section>
   </main>
 
-  <!-- ===== Footer / Diagnostics (kept) ===== -->
+  <!-- ===== Footer / Diagnostics ===== -->
   <div class="foot">
     <div>© <span id="year"></span> Umbrella Systems</div>
     <div class="mono" id="diag"></div>
   </div>
 
-  <!-- ===== Onboarding / Help (kept) ===== -->
+  <!-- ===== Onboarding / Help ===== -->
   <div id="onboard" class="onboard hidden" role="dialog" aria-modal="true">
     <div class="sheet">
       <h2>Welcome</h2>
       <p>
-        Start camera, press <em>Capture</em> to detect, then <em>Duplicate</em> pads. Motion crossing a pad edge triggers a hit.
+        Start camera, press <em>Capture</em> to detect, then <em>Duplicate</em> pads. Motion across a pad edge triggers a hit.
       </p>
 
       <div class="grid-2">
@@ -168,7 +168,7 @@
     </div>
   </div>
 
-  <!-- ===== App entry (kept) ===== -->
+  <!-- ===== App entry ===== -->
   <script type="module" src="/src/app.js"></script>
 </body>
 </html>

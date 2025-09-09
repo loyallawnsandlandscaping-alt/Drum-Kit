@@ -1,165 +1,98 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>DJ DrumKit</title>
-  <meta name="theme-color" content="#0a0a0a" />
-  <link rel="manifest" href="/manifest.json" />
-  <style>
-    :root {
-      --bg: #0b0c10;
-      --card: #161824;
-      --muted: #9aa0a6;
-      --text: #e7e7ea;
-      --accent: #5eead4;
-      --br: 16px;
-    }
-    * { box-sizing: border-box; }
-    html, body { margin: 0; height: 100%; font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); }
-
-    header { padding: 0.5rem 1rem; background: var(--card); display: flex; justify-content: space-between; align-items: center; }
-    header h1 { font-size: 1.25rem; margin: 0; }
-
-    main { display: flex; flex-direction: column; align-items: center; padding: 1rem; gap: 1rem; }
-
-    /* Video layout */
-    #videos { display: flex; justify-content: center; align-items: center; gap: 1rem; width: 100%; }
-    #localVideo { width: 70%; border-radius: var(--br); background: black; }
-    #remoteVideo { width: 25%; border-radius: var(--br); background: black; }
-
-    /* Pads area */
-    #pads { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-top: 1rem; justify-content: center; }
-    .pad { width: 100px; height: 100px; background: var(--card); border-radius: var(--br); display: flex; justify-content: center; align-items: center; cursor: pointer; user-select: none; }
-    .pad.assigned { border: 2px solid var(--accent); }
-
-    /* Auth */
-    #auth { display: flex; flex-direction: column; gap: 0.5rem; max-width: 300px; margin: auto; }
-    input, button { padding: 0.5rem; border-radius: var(--br); border: none; }
-    button { background: var(--accent); color: black; font-weight: bold; cursor: pointer; }
-
-    /* Controls */
-    #controls { display: flex; gap: 0.5rem; flex-wrap: wrap; justify-content: center; }
-  </style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>DJ’s Drum-Kit — Diamond Copy</title>
+  <meta name="theme-color" content="#0b0c10">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="icon" href="/icons/icon-192.png">
+  <link rel="stylesheet" href="/styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.2"></script>
 </head>
 <body>
   <header>
-    <h1>🥁 DJ DrumKit</h1>
-    <div>
-      <button id="loginBtn">Login</button>
-      <button id="logoutBtn" style="display:none;">Logout</button>
+    <div class="brand"><div class="logo"></div><div>DJ’s Drum-Kit <span class="badge">Diamond Copy</span></div></div>
+    <div class="toolbar">
+      <button id="btnInstall" class="ghost">Install</button>
+      <button id="btnReset" class="ghost">Reset Cache</button>
+      <button id="btnHelp" class="ghost">Help</button>
     </div>
   </header>
 
-  <main>
-    <!-- Auth form -->
-    <div id="auth" style="display:none;">
-      <input type="email" id="email" placeholder="Email" />
-      <input type="password" id="password" placeholder="Password" />
-      <button id="doLogin">Login / Sign Up</button>
-    </div>
+  <main class="panel">
+    <section class="card">
+      <h3>Camera & Detection</h3>
+      <div class="toolbar">
+        <button id="btnStart" class="primary">Start Camera</button>
+        <button id="btnCapture">Capture</button>
+        <button id="btnDuplicateAll">Duplicate All</button>
+      </div>
+      <div class="status" id="camStatus">camera: idle</div>
+      <video id="camera" autoplay playsinline muted></video>
+      <canvas id="frame" class="hidden"></canvas>
+      <h4>Detected Objects</h4>
+      <div class="detected-list" id="detectedList"></div>
+    </section>
 
-    <!-- Videos -->
-    <div id="videos">
-      <video id="localVideo" autoplay muted playsinline></video>
-      <video id="remoteVideo" autoplay playsinline></video>
-    </div>
+    <section class="card">
+      <h3>Playground (Motion-triggered)</h3>
+      <div class="toolbar">
+        <button id="btnRecord">● Record</button>
+        <button id="btnStopRec" disabled>■ Stop</button>
+        <button id="btnPlayLoop" disabled>▶ Play Loop</button>
+        <button id="btnStopLoop" disabled>⏹ Stop Loop</button>
+        <input id="loopLen" type="range" min="2" max="32" value="8" title="Loop length (s)">
+      </div>
+      <div class="status" id="loopStatus">loop: idle</div>
+      <div id="dupeArea" class="dupe-area"></div>
+    </section>
 
-    <!-- Pads -->
-    <div id="pads"></div>
+    <section class="card">
+      <h3>Call & Battle</h3>
+      <div class="row">
+        <input id="roomId" placeholder="room code" />
+        <button id="btnCall" class="primary">Call</button>
+        <button id="btnAnswer">Answer</button>
+        <button id="btnHangup" disabled>Hang Up</button>
+      </div>
+      <div class="status" id="callStatus">call: idle</div>
+      <div class="row">
+        <div>You: <strong id="youScore">0</strong></div>
+        <div>Opponent: <strong id="oppScore">0</strong></div>
+        <div>Timer: <strong id="battleTimer">--</strong></div>
+      </div>
+    </section>
 
-    <!-- Controls -->
-    <div id="controls">
-      <input id="room" placeholder="Room name" />
-      <button id="callBtn">Call</button>
-      <button id="answerBtn">Answer</button>
-      <button id="hangupBtn">Hang Up</button>
-      <button id="saveBtn">Save Scene</button>
-      <button id="loadBtn">Load Scene</button>
-      <button id="recordBtn">Start Recording</button>
-      <button id="stopRecordBtn">Stop Recording</button>
-    </div>
+    <section class="card settings">
+      <h3>Settings</h3>
+      <label class="row"><span>Beta: Unlock all sounds</span><input type="checkbox" id="betaAll" checked></label>
+      <label class="row"><span>Hit Cooldown (ms)</span><input type="range" id="cooldown" min="30" max="300" value="90"></label>
+      <label class="row"><span>Motion Sensitivity</span><input type="range" id="motionThresh" min="1" max="20" value="5"></label>
+      <div class="row"><span>Model Status</span><div class="badge" id="modelStatus">loading…</div></div>
+    </section>
   </main>
 
-  <script type="module">
-    import { supabase } from "./src/lib/supabase.ts";
-    import { call, waitForCall, hangup, initLocalMedia, getLocalStream, getRemoteStream } from "./src/lib/rtc.ts";
-    import { saveScene, loadLatestScene } from "./src/lib/sessions.ts";
-    import { startRecording, stopRecording } from "./src/lib/recorder.ts";
-    import { loadAll, play } from "./src/audio.ts";
+  <div class="foot">
+    <div>© <span id="year"></span> Umbrella Systems</div>
+    <div class="mono" id="diag"></div>
+  </div>
 
-    // ---------- Auth ----------
-    const loginBtn = document.getElementById("loginBtn");
-    const logoutBtn = document.getElementById("logoutBtn");
-    const authForm = document.getElementById("auth");
+  <div id="onboard" class="onboard hidden">
+    <div class="sheet">
+      <h2>Welcome</h2>
+      <p>Camera runs live. Detection runs only when you press Capture. Pads trigger when motion crosses their perimeter.</p>
+      <div class="grid-2">
+        <div><div class="progress"><div id="pwaProgress"></div></div><small id="onboardHint">Preparing…</small></div>
+        <div class="row" style="justify-content:flex-end">
+          <button id="btnGrant" class="primary">Grant Camera Access</button>
+          <button id="btnDismiss">Dismiss</button>
+        </div>
+      </div>
+    </div>
+  </div>
 
-    loginBtn.onclick = () => authForm.style.display = "flex";
-    logoutBtn.onclick = async () => { await supabase.auth.signOut(); logoutBtn.style.display="none"; loginBtn.style.display="inline"; };
-
-    document.getElementById("doLogin").onclick = async () => {
-      const email = document.getElementById("email").value;
-      const pw = document.getElementById("password").value;
-      const { error } = await supabase.auth.signUp({ email, password: pw });
-      if (error && error.message.includes("already")) {
-        await supabase.auth.signInWithPassword({ email, password: pw });
-      }
-      authForm.style.display = "none";
-      loginBtn.style.display = "none";
-      logoutBtn.style.display = "inline";
-    };
-
-    // ---------- Video ----------
-    const localVideo = document.getElementById("localVideo");
-    const remoteVideo = document.getElementById("remoteVideo");
-
-    const localStream = await initLocalMedia();
-    localVideo.srcObject = localStream;
-
-    function attachRemote(stream) {
-      remoteVideo.srcObject = stream;
-    }
-
-    document.getElementById("callBtn").onclick = () => {
-      const room = document.getElementById("room").value || "default";
-      call(room, attachRemote);
-    };
-    document.getElementById("answerBtn").onclick = () => {
-      const room = document.getElementById("room").value || "default";
-      waitForCall(room, attachRemote);
-    };
-    document.getElementById("hangupBtn").onclick = hangup;
-
-    // ---------- Pads ----------
-    const padNames = ["snare-1.wav","kick-1.wav","deepkick.wav","tom-1.wav","tom-2.wav","clap-1.wav","clap-fat.wav","openhat.wav","closedhat-1.wav"];
-    const padMap = Object.fromEntries(padNames.map(n => [n, `/public/${n}`]));
-    await loadAll(padMap);
-
-    const pads = document.getElementById("pads");
-    padNames.forEach(name => {
-      const div = document.createElement("div");
-      div.className = "pad";
-      div.textContent = name.split(".")[0];
-      div.onclick = () => play(name);
-      pads.appendChild(div);
-    });
-
-    // ---------- Save/Load ----------
-    document.getElementById("saveBtn").onclick = async () => {
-      await saveScene({ pads: padNames });
-      alert("Scene saved!");
-    };
-    document.getElementById("loadBtn").onclick = async () => {
-      const scene = await loadLatestScene();
-      if (scene) alert("Scene loaded: " + JSON.stringify(scene));
-      else alert("No saved scene.");
-    };
-
-    // ---------- Recording ----------
-    document.getElementById("recordBtn").onclick = () => {
-      startRecording(getLocalStream());
-      alert("Recording started!");
-    };
-    document.getElementById("stopRecordBtn").onclick = async () => {
-      const file = await stopRecording();
-      alert("Recording saved as " + file.name);
-    };
+  <script type="module" src="/src/app.js"></script>
+</body>
+</html>

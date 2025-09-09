@@ -13,7 +13,10 @@
 </head>
 <body>
   <header>
-    <div class="brand"><div class="logo"></div><div>DJ’s Drum-Kit <span class="badge">Diamond Copy</span></div></div>
+    <div class="brand">
+      <div class="logo"></div>
+      <div>DJ’s Drum-Kit <span class="badge">Diamond Copy</span></div>
+    </div>
     <div class="toolbar">
       <button id="btnInstall" class="ghost">Install</button>
       <button id="btnReset" class="ghost">Reset Cache</button>
@@ -22,6 +25,7 @@
   </header>
 
   <main class="panel">
+    <!-- Camera & Detection -->
     <section class="card">
       <h3>Camera & Detection</h3>
       <div class="toolbar">
@@ -36,6 +40,7 @@
       <div class="detected-list" id="detectedList"></div>
     </section>
 
+    <!-- Playground -->
     <section class="card">
       <h3>Playground (Motion-triggered)</h3>
       <div class="toolbar">
@@ -49,6 +54,7 @@
       <div id="dupeArea" class="dupe-area"></div>
     </section>
 
+    <!-- Call & Battle -->
     <section class="card">
       <h3>Call & Battle</h3>
       <div class="row">
@@ -65,12 +71,31 @@
       </div>
     </section>
 
+    <!-- Settings -->
     <section class="card settings">
       <h3>Settings</h3>
-      <label class="row"><span>Beta: Unlock all sounds</span><input type="checkbox" id="betaAll" checked></label>
-      <label class="row"><span>Hit Cooldown (ms)</span><input type="range" id="cooldown" min="30" max="300" value="90"></label>
-      <label class="row"><span>Motion Sensitivity</span><input type="range" id="motionThresh" min="1" max="20" value="5"></label>
-      <div class="row"><span>Model Status</span><div class="badge" id="modelStatus">loading…</div></div>
+      <label class="row">
+        <span>Beta: Unlock all sounds</span>
+        <input type="checkbox" id="betaAll" checked>
+      </label>
+      <label class="row">
+        <span>Hit Cooldown (ms)</span>
+        <input type="range" id="cooldown" min="30" max="300" value="90">
+      </label>
+      <label class="row">
+        <span>Motion Sensitivity</span>
+        <input type="range" id="motionThresh" min="1" max="20" value="5">
+      </label>
+      <div class="row">
+        <span>Model Status</span>
+        <div class="badge" id="modelStatus">loading…</div>
+      </div>
+      <hr>
+      <h4>Permissions</h4>
+      <small>If camera permission was denied, change it in your browser’s site settings and reload.</small>
+      <hr>
+      <h4>About</h4>
+      <small>Screen-space motion collisions. Detection runs only on Capture. One duplicate per object; only duplicates play.</small>
     </section>
   </main>
 
@@ -79,12 +104,16 @@
     <div class="mono" id="diag"></div>
   </div>
 
+  <!-- Onboarding / Help -->
   <div id="onboard" class="onboard hidden">
     <div class="sheet">
       <h2>Welcome</h2>
       <p>Camera runs live. Detection runs only when you press Capture. Pads trigger when motion crosses their perimeter.</p>
       <div class="grid-2">
-        <div><div class="progress"><div id="pwaProgress"></div></div><small id="onboardHint">Preparing…</small></div>
+        <div>
+          <div class="progress"><div id="pwaProgress"></div></div>
+          <small id="onboardHint">Preparing…</small>
+        </div>
         <div class="row" style="justify-content:flex-end">
           <button id="btnGrant" class="primary">Grant Camera Access</button>
           <button id="btnDismiss">Dismiss</button>

@@ -1,13 +1,26 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>DJ’s Drum-Kit — Diamond Copy</title>
-  <meta name="theme-color" content="#0b0c10">
-  <link rel="manifest" href="/manifest.json">
-  <link rel="icon" href="/icons/icon-192.png">
-  <link rel="stylesheet" href="/styles.css">
+  <meta charset="utf-8" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <title>DJ Drum Kit</title>
+  <meta name="description" content="DJ Drum Kit — motion-triggered drum pads with realtime calling & battles." />
+  <meta name="theme-color" content="#0b0c10" />
+
+  <!-- PWA -->
+  <link rel="manifest" href="/manifest.json" />
+
+  <!-- Icons (final set) -->
+  <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png" />
+  <link rel="icon" type="image/png" sizes="512x512" href="/icons/icon-512.png" />
+  <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+
+  <!-- Styles -->
+  <link rel="stylesheet" href="/styles.css" />
+
+  <!-- Models (capture-only detection) -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0/dist/tf.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.2"></script>
 </head>
@@ -15,7 +28,7 @@
   <header>
     <div class="brand">
       <div class="logo"></div>
-      <div>DJ’s Drum-Kit <span class="badge">Diamond Copy</span></div>
+      <div>DJ Drum Kit <span class="badge">Diamond Copy</span></div>
     </div>
     <div class="toolbar">
       <button id="btnInstall" class="ghost">Install</button>
@@ -36,11 +49,12 @@
       <div class="status" id="camStatus">camera: idle</div>
       <video id="camera" autoplay playsinline muted></video>
       <canvas id="frame" class="hidden"></canvas>
+
       <h4>Detected Objects</h4>
       <div class="detected-list" id="detectedList"></div>
     </section>
 
-    <!-- Playground -->
+    <!-- Playground (motion-triggered pads) -->
     <section class="card">
       <h3>Playground (Motion-triggered)</h3>
       <div class="toolbar">
@@ -48,7 +62,7 @@
         <button id="btnStopRec" disabled>■ Stop</button>
         <button id="btnPlayLoop" disabled>▶ Play Loop</button>
         <button id="btnStopLoop" disabled>⏹ Stop Loop</button>
-        <input id="loopLen" type="range" min="2" max="32" value="8" title="Loop length (s)">
+        <input id="loopLen" type="range" min="2" max="32" value="8" title="Loop length (s)" />
       </div>
       <div class="status" id="loopStatus">loop: idle</div>
       <div id="dupeArea" class="dupe-area"></div>
@@ -74,28 +88,36 @@
     <!-- Settings -->
     <section class="card settings">
       <h3>Settings</h3>
+
       <label class="row">
         <span>Beta: Unlock all sounds</span>
-        <input type="checkbox" id="betaAll" checked>
+        <input type="checkbox" id="betaAll" checked />
       </label>
+
       <label class="row">
         <span>Hit Cooldown (ms)</span>
-        <input type="range" id="cooldown" min="30" max="300" value="90">
+        <input type="range" id="cooldown" min="30" max="300" value="90" />
       </label>
+
       <label class="row">
         <span>Motion Sensitivity</span>
-        <input type="range" id="motionThresh" min="1" max="20" value="5">
+        <input type="range" id="motionThresh" min="1" max="20" value="5" />
       </label>
+
       <div class="row">
         <span>Model Status</span>
         <div class="badge" id="modelStatus">loading…</div>
       </div>
-      <hr>
+
+      <hr />
       <h4>Permissions</h4>
       <small>If camera permission was denied, change it in your browser’s site settings and reload.</small>
-      <hr>
+
+      <hr />
       <h4>About</h4>
-      <small>Screen-space motion collisions. Detection runs only on Capture. One duplicate per object; only duplicates play.</small>
+      <small>
+        Screen-space motion collisions. Detection runs only on Capture. One duplicate per object; only duplicates play.
+      </small>
     </section>
   </main>
 
@@ -108,7 +130,10 @@
   <div id="onboard" class="onboard hidden">
     <div class="sheet">
       <h2>Welcome</h2>
-      <p>Camera runs live. Detection runs only when you press Capture. Pads trigger when motion crosses their perimeter.</p>
+      <p>
+        Camera runs live. Detection runs only when you press Capture. Pads trigger when motion crosses their perimeter.
+      </p>
+
       <div class="grid-2">
         <div>
           <div class="progress"><div id="pwaProgress"></div></div>
@@ -122,6 +147,7 @@
     </div>
   </div>
 
+  <!-- App entry (module wires motion, audio, detection, loop, call/battle, SW) -->
   <script type="module" src="/src/app.js"></script>
 </body>
 </html>

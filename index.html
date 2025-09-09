@@ -6,11 +6,10 @@
   <title>DJ DrumKit</title>
   <meta name="theme-color" content="#0a0a0a" />
   <link rel="manifest" href="/manifest.json" />
-
   <style>
     :root{
-      --bg:#0b0c10;--card:#161824;--muted:#9aa0a6;--text:#e7e7ea;--accent:#5eead4;
-      --br:18px;--stroke:#23283b;--btn1:#1c2333;--btn2:#151a28;
+      --bg:#0b0c10;--card:#161824;--muted:#9aa0a6;--text:#e7e7ea;--br:16px;
+      --stroke:#23283b; --accent:#5ea4d4; --accent2:#c36bff;
     }
     *{box-sizing:border-box}
     html,body{height:100%}
@@ -20,101 +19,99 @@
       background:radial-gradient(1200px 800px at 80% -10%,#1a1f2e 0%,#0b0c10 40%),var(--bg);
       color:var(--text);
     }
-    header{
-      display:flex;align-items:center;justify-content:space-between;
-      padding:14px 16px;position:sticky;top:0;z-index:5;backdrop-filter:blur(6px)
-    }
+    header{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;position:sticky;top:0;z-index:3;backdrop-filter:blur(6px)}
     header h1{font-size:18px;margin:0;letter-spacing:.4px}
-    .btn,button{
-      background:linear-gradient(180deg,var(--btn1),var(--btn2));
-      border:1px solid #242a3c;color:#fff;border-radius:999px;
-      padding:9px 12px;cursor:pointer;font-weight:600
-    }
-    .btn[disabled],button[disabled]{opacity:.55;cursor:not-allowed}
-    main{max-width:1200px;margin:18px auto;padding:0 12px 28px}
+    main{max-width:1100px;margin:18px auto;padding:0 12px 24px}
+    .grid{display:grid;gap:12px;grid-template-columns:repeat(12,1fr)}
+    .card{grid-column:span 12;background:var(--card);border:1px solid var(--stroke);border-radius:var(--br);padding:14px;box-shadow:0 10px 40px rgba(0,0,0,.30)}
+    @media(min-width:860px){.span-6{grid-column:span 6}.span-4{grid-column:span 4}.span-8{grid-column:span 8}}
+    h2{margin:6px 0 10px;font-size:16px}
+    input,button,select{border-radius:12px;border:1px solid var(--stroke);background:#0f1220;color:var(--text);padding:10px 12px}
+    button{cursor:pointer}
     .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    .muted{color:var(--muted);font-size:12px}
     .pill{font-size:11px;padding:4px 8px;border-radius:999px;background:#121831;border:1px solid #263057;color:#a8b4ff}
-    .card{background:var(--card);border:1px solid var(--stroke);border-radius:var(--br);padding:12px;box-shadow:0 10px 40px rgba(0,0,0,.30)}
-    .muted{color:var(--muted)}
-    /* Stage area */
-    #stage{
-      position:relative;min-height:460px;height:60vh;max-height:70vh;
-      background:#0e1020;border:1px solid var(--stroke);border-radius:16px;overflow:hidden
-    }
-    /* Pads are absolutely positioned blocks inside stage */
+    /* Drum “pad” area */
+    #padArea{position:relative;min-height:360px;border:1px dashed var(--stroke);border-radius:12px;background:#0e1020}
     .pad{
-      position:absolute;display:flex;align-items:center;justify-content:center;
-      background:#121420;border:1px solid var(--stroke);border-radius:14px;
-      user-select:none;-webkit-user-select:none;
-      box-shadow:0 4px 16px rgba(0,0,0,.35);
+      position:absolute; min-width:84px; min-height:56px; padding:8px 10px;
+      border-radius:12px; border:1px solid #2b3150; background:linear-gradient(180deg,#181d33,#12172a);
+      display:flex; flex-direction:column; gap:6px; user-select:none; cursor:grab;
     }
-    .pad.sel{ outline:3px solid var(--accent); } /* ← requested highlight */
-    /* Right controls */
-    aside.card h3{margin:6px 0 10px}
-    select, input[type="text"]{
-      width:100%;padding:10px;border-radius:12px;background:#0f1220;color:var(--text);border:1px solid var(--stroke)
-    }
-    footer{color:#9aa0a6;font-size:12px;padding:18px 0 36px;text-align:center}
+    .pad:active{cursor:grabbing}
+    .pad .title{font-weight:600}
+    .pad button{padding:6px 8px; font-size:12px}
+    /* Video preview */
+    #localVid{transform:scaleX(-1)} /* selfie preview */
+    video, canvas { background:#000; }
   </style>
 </head>
 <body>
   <header>
-    <h1>DJ DrumKit</h1>
+    <h1>DJ DrumKit • PWA</h1>
     <div class="row">
-      <!-- simple auth controls (wired in main.ts via supabase session helpers) -->
-      <button id="loginBtn" class="btn">Sign In</button>
-      <button id="logoutBtn" class="btn" style="display:none">Sign Out</button>
+      <span id="authState" class="muted">Signed out</span>
+      <button id="signInBtn">Sign in</button>
+      <button id="signOutBtn" style="display:none">Sign out</button>
     </div>
   </header>
 
-  <main>
-    <div class="row" style="margin-bottom:10px">
-      <button id="detectBtn" class="btn">Detect Objects</button>
-      <button id="recordBtn" class="btn">● Record</button>
-      <button id="stopBtn" class="btn">■ Stop</button>
-      <span class="pill">drag pads • click plays • streak across edges to trigger</span>
-    </div>
+  <main class="grid">
+    <!-- Left: Pads / Controls -->
+    <section class="card span-8">
+      <h2>Playground</h2>
+      <div class="row" style="margin-bottom:8px">
+        <button id="addPad">Add Pad</button>
+        <button id="saveScene">Save Scene</button>
+        <button id="clearScene">Clear Scene</button>
+        <span class="muted">Drag pads. Click to assign sound. “Loop” to repeat.</span>
+      </div>
+      <div id="padArea"></div>
+    </section>
 
-    <div style="display:grid;grid-template-columns:1fr 270px;gap:12px;align-items:start">
-      <div id="stage" class="card"></div>
+    <!-- Right: Call + Record -->
+    <section class="card span-4">
+      <h2>Call & Record</h2>
 
-      <aside class="card">
-        <h3>Pad Controls</h3>
-        <div class="row" style="margin-bottom:8px">
-          <button id="newPadBtn" class="btn">New Pad</button>
-          <button id="dupPadBtn" class="btn">Duplicate</button>
-          <button id="delPadBtn" class="btn">Delete</button>
-        </div>
-        <div class="row" style="align-items:stretch">
-          <div style="flex:1">
-            <label for="soundSelect" class="muted" style="font-size:12px">Assign sound</label>
-            <select id="soundSelect"></select>
-          </div>
-          <button id="assignBtn" class="btn" style="height:40px">Assign</button>
-        </div>
-        <div class="muted" style="font-size:12px;margin-top:8px;line-height:1.35">
-          • Click a pad to select it (teal outline).<br/>
-          • <strong>Duplicate</strong> creates a copy; then pick a sound for that copy and press <em>Assign</em>.<br/>
-          • Each sound can be assigned once via the picker (copies can overlap for layered hits).<br/>
-        </div>
-      </aside>
-    </div>
+      <div class="row" style="margin-bottom:8px">
+        <input id="roomInput" placeholder="Room code (e.g., dj-123)" style="flex:1;min-width:160px">
+        <button id="callBtn">Call</button>
+        <button id="hangupBtn" disabled>Hang up</button>
+      </div>
+
+      <div class="row" style="gap:10px;margin-bottom:8px">
+        <video id="localVid" autoplay muted playsinline style="width:160px;border-radius:12px"></video>
+        <video id="remoteVid" autoplay playsinline style="width:160px;border-radius:12px"></video>
+      </div>
+
+      <canvas id="mixCanvas" width="640" height="360" style="width:100%;border:1px solid var(--stroke);border-radius:12px"></canvas>
+
+      <div class="row" style="margin-top:8px">
+        <button id="startAV">Start Video Rec</button>
+        <button id="stopAV" disabled>Stop Video Rec</button>
+        <button id="shareAV" disabled>Share</button>
+      </div>
+
+      <div class="muted" style="margin-top:8px">
+        Tip: Each person sees their own camera large; the other appears as PiP.
+      </div>
+    </section>
+
+    <!-- Audio tags (hidden/local muted) -->
+    <audio id="localAudio" autoplay muted playsinline></audio>
+    <audio id="remoteAudio" autoplay playsinline></audio>
   </main>
 
-  <footer>
-    PWA ready • Local-first UI • Works offline after first load
-  </footer>
-
-  <!-- Service worker (optional; safe if /service-worker.js exists) -->
+  <!-- PWA SW (very light cache safety) -->
   <script>
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/service-worker.js').catch(()=>{});
-      });
+  (function(){
+    if('serviceWorker' in navigator){
+      navigator.serviceWorker.register('/service-worker.js').catch(()=>{});
     }
+  })();
   </script>
 
-  <!-- Vite entrypoint -->
+  <!-- App entry (Vite) -->
   <script type="module" src="/src/main.ts"></script>
 </body>
 </html>

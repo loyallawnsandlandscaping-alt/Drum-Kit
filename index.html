@@ -11,16 +11,14 @@
 
   <!-- PWA -->
   <link rel="manifest" href="/manifest.json" />
-
-  <!-- Icons (final) -->
-  <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png" />
-  <link rel="icon" type="image/png" sizes="512x512" href="/icons/icon-512.png" />
-  <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+  <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
+  <link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png" />
+  <link rel="apple-touch-icon" href="/icon-192.png" />
 
   <!-- Styles -->
   <link rel="stylesheet" href="/styles.css" />
 
-  <!-- Models (COCO-SSD loaded; inference initiated by Capture in app code) -->
+  <!-- Models for detection after snapshot -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0/dist/tf.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.2"></script>
 </head>
@@ -34,6 +32,9 @@
       <div>DJ Drum Kit <span class="badge" id="buildBadge">Live</span></div>
     </div>
     <div class="toolbar">
+      <select id="cameraSelect" title="Camera"></select>
+      <button id="btnSwitchCam" class="ghost">Switch</button>
+      <button id="btnMirror" class="ghost">Mirror Screen</button>
       <button id="btnInstall" class="ghost" disabled>Install</button>
       <button id="btnReset" class="ghost">Reset Cache</button>
       <button id="btnHelp" class="ghost">Help</button>
@@ -48,18 +49,21 @@
 
       <div class="toolbar">
         <button id="btnStart" class="primary">Start Camera</button>
-        <button id="btnCapture">Capture</button>
+        <button id="btnCapture">Take Photo</button>
         <button id="btnDuplicateAll">Duplicate All</button>
       </div>
 
       <div class="status" id="camStatus">camera: idle</div>
 
-      <div class="media">
+      <div class="media" style="position:relative;">
         <video id="camera" autoplay playsinline muted></video>
-        <canvas id="frame" class="hidden"></canvas>
+        <!-- overlay for pads -->
+        <canvas id="frame"></canvas>
+        <!-- overlay for detection boxes from the snapshot -->
+        <canvas id="detect"></canvas>
       </div>
 
-      <h4>Detected Objects</h4>
+      <h4>Detected Objects (from photo)</h4>
       <div class="detected-list" id="detectedList"></div>
     </section>
 
@@ -80,7 +84,6 @@
       </div>
 
       <div class="status" id="loopStatus">loop: idle</div>
-
       <div id="dupeArea" class="dupe-area" aria-label="Duplicated pads area"></div>
     </section>
 
@@ -126,18 +129,6 @@
         <span>Model</span>
         <span class="badge" id="modelStatus">idle</span>
       </div>
-
-      <hr />
-
-      <h4>Permissions</h4>
-      <small>If camera permission was denied, change it in your browser’s site settings and reload.</small>
-
-      <hr />
-
-      <h4>About</h4>
-      <small>
-        Any object can trigger; detection runs on Capture; motion crossing pad edge fires hit; one duplicate per object; only duplicates play.
-      </small>
     </section>
   </main>
 
@@ -151,9 +142,7 @@
   <div id="onboard" class="onboard hidden" role="dialog" aria-modal="true">
     <div class="sheet">
       <h2>Welcome</h2>
-      <p>
-        Start camera, press <em>Capture</em> to detect, then <em>Duplicate</em> pads. Motion across a pad edge triggers a hit.
-      </p>
+      <p>Start camera, take a photo to identify objects, then place/duplicate pads. Motion across a pad edge triggers a hit.</p>
 
       <div class="grid-2">
         <div>
@@ -168,7 +157,7 @@
     </div>
   </div>
 
-  <!-- ===== App entry ===== -->
+  <!-- App entry -->
   <script type="module" src="/src/app.js"></script>
 </body>
 </html>

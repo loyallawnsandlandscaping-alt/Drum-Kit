@@ -1,84 +1,157 @@
+// src/lib/rtc.ts
 import { supabase } from "./supabase";
 
-let pc: RTCPeerConnection | null = null;
-let channel: ReturnType<typeof supabase.channel> | null = null;
-let localStream: MediaStream | null = null;
-let remoteStream: MediaStream | null = null;
+export type RTCEvents = {
+  onRemoteStream?: (stream: MediaStream) => void;
+  onStatus?: (status: 'pending'|'ringing'|'active'|'ended') => void;
+  onError?: (err: string) => void;
+};
 
-const iceServers: RTCIceServer[] = [
-  { urls: "stun:stun.l.google.com:19302" },
-];
+type SignalType = 'offer'|'answer'|'candidate';
 
-export function getLocalStream() { return localStream; }
-export function getRemoteStream() { return remoteStream; }
+export class DrumRTC {
+  private pc: RTCPeerConnection;
+  private callId: string | null = null;
+  private stopRealtime?: () => void;
+  private events: RTCEvents;
+  private localStream?: MediaStream;
+  private iceQueue: RTCIceCandidateInit[] = [];
+  private uid?: string;
+  private email?: string;
 
-export async function initLocalMedia(opts = { video: true, audio: true }) {
-  localStream = await navigator.mediaDevices.getUserMedia(opts);
-  return localStream;
-}
+  constructor(events: RTCEvents = {}) {
+    this.events = events;
+    this.pc = new RTCPeerConnection({
+      iceServers: [{ urls: ['stun:stun.l.google.com:19302'] }]
+    });
 
-function setupPC(onRemote: (stream: MediaStream) => void) {
-  if (pc) pc.close();
-  pc = new RTCPeerConnection({ iceServers });
+    this.pc.ontrack = (e) => {
+      const stream = e.streams?.[0];
+      if (stream && this.events.onRemoteStream) this.events.onRemoteStream(stream);
+    };
 
-  remoteStream = new MediaStream();
-  pc.ontrack = (ev) => {
-    ev.streams[0].getTracks().forEach(tr => remoteStream!.addTrack(tr));
-    onRemote(remoteStream!);
-  };
-
-  pc.onicecandidate = async (ev) => {
-    if (ev.candidate && channel) {
-      await channel.send({ type: "broadcast", event: "signal", payload: { type: "candidate", payload: ev.candidate } });
-    }
-  };
-
-  if (localStream) {
-    localStream.getTracks().forEach(t => pc!.addTrack(t, localStream!));
+    this.pc.onicecandidate = async (e) => {
+      if (!e.candidate || !this.callId || !this.uid) return;
+      await this.insertSignal('candidate', { candidate: e.candidate });
+    };
   }
 
-  return pc;
-}
+  async initAuth() {
+    const { data: { user }, error } = await supabase.auth.getUser();
+    if (error || !user) throw new Error('Not authenticated');
+    this.uid = user.id;
+    this.email = user.email ?? undefined;
+  }
 
-async function joinRoom(room: string, onSignal: (msg: any) => void) {
-  if (channel) await channel.unsubscribe();
-  channel = supabase.channel(`webrtc:${room}`, { config: { broadcast: { ack: true } } });
-  channel.on("broadcast", { event: "signal" }, ({ payload }) => onSignal(payload));
-  await channel.subscribe();
-}
+  addLocalStream(stream: MediaStream) {
+    this.localStream = stream;
+    stream.getTracks().forEach(t => this.pc.addTrack(t, stream));
+  }
 
-export async function call(room: string, onRemote: (s: MediaStream) => void) {
-  await joinRoom(room, async (msg) => {
-    if (msg.type === "answer") {
-      await pc!.setRemoteDescription(new RTCSessionDescription(msg.payload));
-    } else if (msg.type === "candidate") {
-      try { await pc!.addIceCandidate(new RTCIceCandidate(msg.payload)); } catch {}
+  /** Caller creates a call to a callee email */
+  async createCall(calleeEmail: string) {
+    await this.initAuth();
+    const { data: callRow, error: callErr } = await supabase
+      .from('calls')
+      .insert({ caller_id: this.uid, callee_email: calleeEmail, status: 'pending' })
+      .select()
+      .single();
+    if (callErr || !callRow) throw new Error(callErr?.message || 'Call create failed');
+    this.callId = callRow.id;
+
+    await this.subscribeRealtime();
+
+    // Create offer
+    const offer = await this.pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true });
+    await this.pc.setLocalDescription(offer);
+    await this.insertSignal('offer', offer);
+
+    if (this.events.onStatus) this.events.onStatus('ringing');
+    return callRow.id as string;
+  }
+
+  /** Callee joins by callId (e.g., from invite link or list) */
+  async answerCall(callId: string) {
+    await this.initAuth();
+    this.callId = callId;
+    await this.subscribeRealtime();
+
+    // We’ll wait for the offer from caller via realtime and then setRemote → createAnswer.
+    if (this.events.onStatus) this.events.onStatus('ringing');
+  }
+
+  /** Caller or callee ends call */
+  async endCall() {
+    try {
+      if (this.callId) {
+        await supabase.from('calls').update({ status: 'ended' }).eq('id', this.callId);
+      }
+    } finally {
+      this.teardown();
     }
-  });
+  }
 
-  setupPC(onRemote);
-  const offer = await pc!.createOffer();
-  await pc!.setLocalDescription(offer);
+  private teardown() {
+    this.stopRealtime?.();
+    this.stopRealtime = undefined;
+    this.callId = null;
+    try { this.pc.getSenders().forEach(s => s.track?.stop()); } catch {}
+    try { this.pc.close(); } catch {}
+    if (this.events.onStatus) this.events.onStatus('ended');
+  }
 
-  await channel!.send({ type: "broadcast", event: "signal", payload: { type: "offer", payload: offer } });
-}
+  private async insertSignal(type: SignalType, payload: any) {
+    if (!this.callId || !this.uid) return;
+    await supabase.from('signals').insert({
+      call_id: this.callId,
+      sender_id: this.uid,
+      type,
+      payload
+    });
+  }
 
-export async function waitForCall(room: string, onRemote: (s: MediaStream) => void) {
-  await joinRoom(room, async (msg) => {
-    if (msg.type === "offer") {
-      setupPC(onRemote);
-      await pc!.setRemoteDescription(new RTCSessionDescription(msg.payload));
-      const answer = await pc!.createAnswer();
-      await pc!.setLocalDescription(answer);
-      await channel!.send({ type: "broadcast", event: "signal", payload: { type: "answer", payload: answer } });
-    } else if (msg.type === "candidate") {
-      try { await pc!.addIceCandidate(new RTCIceCandidate(msg.payload)); } catch {}
-    }
-  });
-}
+  private async subscribeRealtime() {
+    if (!this.callId) throw new Error('No callId to subscribe');
 
-export async function hangup() {
-  if (channel) await channel.unsubscribe();
-  if (pc) { pc.close(); pc = null; }
-  if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
+    // Live changes to signals for this call
+    const sub = supabase
+      .channel(`signals-${this.callId}`)
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'signals', filter: `call_id=eq.${this.callId}` },
+        async (payload) => {
+          const { type, payload: body, sender_id } = payload.new as any;
+          // Ignore our own inserts
+          const my = (await supabase.auth.getUser()).data.user?.id;
+          if (sender_id === my) return;
+
+          try {
+            if (type === 'offer') {
+              // Callee path
+              await this.pc.setRemoteDescription(new RTCSessionDescription(body));
+              const answer = await this.pc.createAnswer();
+              await this.pc.setLocalDescription(answer);
+              await this.insertSignal('answer', answer);
+              await supabase.from('calls').update({ status: 'active' }).eq('id', this.callId);
+              if (this.events.onStatus) this.events.onStatus('active');
+            } else if (type === 'answer') {
+              // Caller path
+              if (!this.pc.currentRemoteDescription) {
+                await this.pc.setRemoteDescription(new RTCSessionDescription(body));
+                await supabase.from('calls').update({ status: 'active' }).eq('id', this.callId);
+                if (this.events.onStatus) this.events.onStatus('active');
+              }
+            } else if (type === 'candidate') {
+              // ICE
+              await this.pc.addIceCandidate(new RTCIceCandidate(body.candidate));
+            }
+          } catch (err: any) {
+            this.events.onError?.(String(err?.message || err));
+          }
+        }
+      )
+      .subscribe();
+
+    this.stopRealtime = () => { try { supabase.removeChannel(sub); } catch {} };
+  }
 }

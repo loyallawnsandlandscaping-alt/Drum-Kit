@@ -1,26 +1,234 @@
-let unlocked=true;
-const ctx=new (window.AudioContext||window.webkitAudioContext)();
-const NOISE=(()=>{const len=ctx.sampleRate*1.5;const b=ctx.createBuffer(1,len,ctx.sampleRate);const d=b.getChannelData(0);for(let i=0;i<len;i++)d[i]=Math.random()*2-1;return b;})();
-let master=ctx.createGain();master.gain.value=1;master.connect(ctx.destination);
+// src/audioEngine.js
+// Low-latency WebAudio engine for 9 WAVs in /public
+//
+// Public API:
+//   await initAudio()            // preload & decode (optional; auto on first play)
+//   ensureUnlocked()             // resume context on first user gesture (iOS/Safari)
+//   arm()                        // helper: initAudio() + ensureUnlocked()
+//   armAfterCapture()            // alias to arm(); call right after photo capture
+//   playPad(copyId)              // trigger sound for a pad/copy id
+//   assignPad(copyId, soundId)   // pin a pad to a specific sound
+//   setMasterGain(0..1)          // master output gain
+//   getAssignments()             // { copyId -> soundId }
+//   loadSoundsFrom(list|map)     // optional runtime override of sounds map
+//
+// Behavior:
+//   - Uses /public/sounds.json if present; otherwise falls back to the 9 defaults.
+//   - First time a pad hits, it’s assigned a sound via round-robin unless assigned explicitly.
+//   - Very short envelope prevents clicks while keeping hits tight.
 
-export function setUnlocked(v){unlocked=!!v}
-export function setGain(v){master.gain.setValueAtTime(v,ctx.currentTime)}
+let ctx = null;
+let master = null;
+let unlocked = false;
 
-function env(g,t,a,d,s,r,p){g.gain.cancelScheduledValues(t);g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(p,t+a);g.gain.exponentialRampToValueAtTime(Math.max(.0001,s),t+a+d);g.gain.exponentialRampToValueAtTime(.0001,t+a+d+r)}
-function noise(){const n=ctx.createBufferSource();n.buffer=NOISE;return n}
+const cache = new Map();   // url -> AudioBuffer
+const idToUrl = new Map(); // soundId -> url
+const padToId = new Map(); // copyId -> soundId
+let defaultIds = [];       // order used for round-robin
 
-export function playSound(id){
-  const t=ctx.currentTime;
-  switch(id){
-    case 'kick': case '808':{const o=ctx.createOscillator();const g=ctx.createGain();o.type='sine';o.connect(g).connect(master);o.frequency.setValueAtTime(id==='808'?80:120,t);o.frequency.exponentialRampToValueAtTime(40,t+(id==='808'?0.35:0.12));env(g,t,0.001,id==='808'?0.2:0.05,0.0001,id==='808'?0.5:0.15,1.2);o.start(t);o.stop(t+(id==='808'?0.6:0.2));}break;
-    case 'snare': case 'sn2':{const g=ctx.createGain();const n=noise();const bp=ctx.createBiquadFilter();bp.type='bandpass';bp.frequency.setValueAtTime(id==='sn2'?2500:1800,t);const o=ctx.createOscillator();o.type='triangle';o.frequency.setValueAtTime(180,t);o.connect(g);n.connect(bp).connect(g);g.connect(master);env(g,t,0.001,0.08,0.0001,0.12,1.0);o.start(t);o.stop(t+0.15);n.start(t);n.stop(t+0.15);}break;
-    case 'hhc': case 'hho':{const n=noise();const hp=ctx.createBiquadFilter();hp.type='highpass';hp.frequency.setValueAtTime(8000,t);const g=ctx.createGain();n.connect(hp).connect(g).connect(master);if(id==='hhc')env(g,t,0.001,0.03,0.0001,0.05,0.8);else env(g,t,0.001,0.12,0.0001,0.25,0.9);n.start(t);n.stop(t+(id==='hhc'?0.08:0.35));}break;
-    case 'clap':{const g=ctx.createGain();const n=noise();const bp=ctx.createBiquadFilter();bp.type='bandpass';bp.frequency.setValueAtTime(1500,t);n.connect(bp).connect(g).connect(master);env(g,t,0.001,0.02,0.0001,0.18,1.2);n.start(t);n.stop(t+0.2);}break;
-    case 'tom1': case 'tom2': case 'tom3':{const o=ctx.createOscillator();o.type='sine';const g=ctx.createGain();o.connect(g).connect(master);const f=id==='tom1'?140:id==='tom2'?180:220;o.frequency.setValueAtTime(f,t);o.frequency.exponentialRampToValueAtTime(f*0.6,t+0.2);env(g,t,0.001,0.08,0.0001,0.2,1.0);o.start(t);o.stop(t+0.25);}break;
-    case 'rim': case 'blk': case 'clv':{const o=ctx.createOscillator();o.type='square';const g=ctx.createGain();o.connect(g).connect(master);o.frequency.setValueAtTime(id==='rim'?1000:id==='blk'?1200:1500,t);env(g,t,0.001,0.02,0.0001,0.1,0.8);o.start(t);o.stop(t+0.08);}break;
-    case 'ride': case 'crash':{const n=noise();const hp=ctx.createBiquadFilter();hp.type='highpass';hp.frequency.setValueAtTime(6000,t);const g=ctx.createGain();n.connect(hp).connect(g).connect(master);env(g,t,0.001,id==='ride'?0.4:0.6,0.0001,id==='ride'?0.8:1.2,0.9);n.start(t);n.stop(t+(id==='ride'?1.3:1.8));}break;
-    case 'cow':{const o=ctx.createOscillator();o.type='square';const g=ctx.createGain();const bp=ctx.createBiquadFilter();bp.type='bandpass';bp.frequency.setValueAtTime(700,t);o.connect(bp).connect(g).connect(master);env(g,t,0.001,0.05,0.0001,0.2,0.9);o.start(t);o.stop(t+0.2);}break;
-    case 'shk': case 'perc1': case 'perc2': case 'snap':{const n=noise();const g=ctx.createGain();n.connect(g).connect(master);env(g,t,0.001,id==='shk'?0.08:id==='snap'?0.02:0.05,0.0001,id==='shk'?0.12:0.08,0.9);n.start(t);n.stop(t+0.15);}break;
-    default: fetch("public/"+id+".wav").then(r=>r.arrayBuffer()).then(b=>ctx.decodeAudioData(b)).then(buf=>{const s=ctx.createBufferSource();s.buffer=buf;s.connect(master);s.start();});
+let rrIndex = 0;
+
+const DEFAULT_SOUNDS = [
+  { id: "clap-1",       url: "/clap-1.wav" },
+  { id: "clap-fat",     url: "/clap-fat.wav" },
+  { id: "closedhat-1",  url: "/closedhat-1.wav" },
+  { id: "deepkick",     url: "/deepkick.wav" },
+  { id: "kick-1",       url: "/kick-1.wav" },
+  { id: "openhat",      url: "/openhat.wav" },
+  { id: "snare-1",      url: "/snare-1.wav" },
+  { id: "tom-1",        url: "/tom-1.wav" },
+  { id: "tom-2",        url: "/tom-2.wav" },
+];
+
+// ---------- Public API ----------
+
+export async function initAudio() {
+  if (!ctx) {
+    ctx = new (window.AudioContext || window.webkitAudioContext)({
+      latencyHint: "interactive",
+    });
+    master = ctx.createGain();
+    master.gain.value = 0.9;
+    master.connect(ctx.destination);
   }
+  await loadSoundMap();
+  await preloadAll();
+}
+
+export async function ensureUnlocked() {
+  if (!ctx) await initAudio();
+  // iOS/Safari requires a user gesture before audio can start
+  if (ctx.state === "suspended") {
+    try { await ctx.resume(); } catch {}
+  }
+  unlocked = true;
+}
+
+/** Convenience helper: call this after your photo is taken (or any user gesture). */
+export async function arm() {
+  await initAudio().catch(()=>{});
+  await ensureUnlocked().catch(()=>{});
+}
+
+/** Alias for clarity in app code when used after capture. */
+export const armAfterCapture = arm;
+
+export function setMasterGain(v) {
+  if (!master) return;
+  const n = Number(v);
+  master.gain.value = Number.isFinite(n) ? Math.max(0, Math.min(1, n)) : master.gain.value;
+}
+
+export function assignPad(copyId, soundId) {
+  if (!idToUrl.has(soundId)) return false;
+  padToId.set(copyId, soundId);
+  return true;
+}
+
+export function getAssignments() {
+  const out = {};
+  for (const [k, v] of padToId.entries()) out[k] = v;
+  return out;
+}
+
+export async function playPad(copyId) {
+  if (!ctx) await initAudio();
+
+  // Best effort unlock if not already done (won’t throw if not allowed yet)
+  if (!unlocked && ctx.state === "suspended") {
+    try { await ctx.resume(); unlocked = true; } catch {}
+  }
+
+  const soundId = resolveSoundForPad(copyId);
+  const url = idToUrl.get(soundId);
+  if (!url) return;
+
+  const buf = await getBuffer(url);
+  if (!buf) return;
+
+  const t = ctx.currentTime;
+
+  // One-shot source
+  const src = ctx.createBufferSource();
+  src.buffer = buf;
+
+  // Fast, clickless envelope (tight attack, short tail)
+  const v = ctx.createGain();
+  v.gain.setValueAtTime(0.0001, t);
+  v.gain.exponentialRampToValueAtTime(1.0, t + 0.002);
+  // keep tail inside buffer length; shorter of 0.9s or buffer duration
+  v.gain.exponentialRampToValueAtTime(0.0001, t + Math.min(0.9, buf.duration));
+
+  src.connect(v);
+  v.connect(master);
+  src.start();
+}
+
+/**
+ * Optional: override sound mapping at runtime.
+ * Accepts:
+ *   - Array: [{id, url}, ...]
+ *   - Object map: { id: url, ... }
+ */
+export function loadSoundsFrom(listOrMap) {
+  idToUrl.clear();
+  defaultIds = [];
+
+  if (Array.isArray(listOrMap)) {
+    for (const s of listOrMap) {
+      if (s && s.id && s.url) {
+        idToUrl.set(s.id, s.url);
+        defaultIds.push(s.id);
+      }
+    }
+  } else if (listOrMap && typeof listOrMap === "object") {
+    for (const [id, url] of Object.entries(listOrMap)) {
+      idToUrl.set(id, url);
+      defaultIds.push(id);
+    }
+  }
+
+  // Reset caches for new set (keeps already-decoded buffers for identical URLs)
+  rrIndex = 0;
+  padToId.clear();
+}
+
+// ---------- Internals ----------
+
+async function loadSoundMap() {
+  idToUrl.clear();
+  defaultIds = [];
+
+  // Try /sounds.json first
+  try {
+    const res = await fetch("/sounds.json", { cache: "no-store" });
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        for (const s of data) {
+          if (s?.id && s?.url) {
+            idToUrl.set(s.id, s.url);
+            defaultIds.push(s.id);
+          }
+        }
+      } else if (data && typeof data === "object") {
+        for (const [id, url] of Object.entries(data)) {
+          idToUrl.set(id, url);
+          defaultIds.push(id);
+        }
+      }
+    }
+  } catch {
+    // ignore; will fall back to defaults
+  }
+
+  // Fallback to the 9 defaults if nothing was loaded
+  if (idToUrl.size === 0) {
+    for (const s of DEFAULT_SOUNDS) {
+      idToUrl.set(s.id, s.url);
+      defaultIds.push(s.id);
+    }
+  }
+}
+
+async function preloadAll() {
+  // Warm the cache so first hit is tight
+  const urls = [...idToUrl.values()];
+  await Promise.all(urls.map((u) => getBuffer(u).catch(() => null)));
+}
+
+async function getBuffer(url) {
+  if (cache.has(url)) return cache.get(url);
+  const res = await fetch(url, { cache: "force-cache" });
+  if (!res.ok) return null;
+  const arr = await res.arrayBuffer();
+  const buf = await getCtx().decodeAudioData(arr.slice(0));
+  cache.set(url, buf);
+  return buf;
+}
+
+function getCtx() {
+  if (!ctx) {
+    ctx = new (window.AudioContext || window.webkitAudioContext)({
+      latencyHint: "interactive",
+    });
+    master = ctx.createGain();
+    master.gain.value = 0.9;
+    master.connect(ctx.destination);
+  }
+  return ctx;
+}
+
+function resolveSoundForPad(copyId) {
+  if (padToId.has(copyId)) return padToId.get(copyId);
+
+  // Stable round-robin assignment on first touch
+  if (defaultIds.length === 0) {
+    for (const s of DEFAULT_SOUNDS) idToUrl.set(s.id, s.url);
+    defaultIds = DEFAULT_SOUNDS.map((s) => s.id);
+  }
+  const picked = defaultIds[rrIndex % defaultIds.length];
+  rrIndex++;
+  padToId.set(copyId, picked);
+  return picked;
 }

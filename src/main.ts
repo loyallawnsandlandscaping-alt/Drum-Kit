@@ -3,23 +3,23 @@ import { play, loadAll } from "./audio";
 
 // Map sound names to file paths
 const sounds: Record<string, string> = {
-  kick: "/public/kick-1.wav",
-  snare: "/public/snare-1.wav",
-  tom1: "/public/tom-1.wav",
-  tom2: "/public/tom-2.wav",
-  hihat: "/public/closedhat-1.wav",
-  openhat: "/public/openhat.wav",
-  clap: "/public/clap-1.wav",
-  clapFat: "/public/clap-fat.wav",
-  deepkick: "/public/deepkick.wav"
+  kick: "/kick-1.wav",
+  snare: "/snare-1.wav",
+  tom1: "/tom-1.wav",
+  tom2: "/tom-2.wav",
+  hihat: "/closedhat-1.wav",
+  openhat: "/openhat.wav",
+  clap: "/clap-1.wav",
+  clapFat: "/clap-fat.wav",
+  deepkick: "/deepkick.wav"
 };
 
-// State
+// --- State ---
 let assigned: Record<string, string> = {};
 let localStream: MediaStream | null = null;
 let peer: RTCPeerConnection | null = null;
 
-// UI Elements
+// --- UI Elements ---
 const loginDiv = document.getElementById("login")!;
 const emailInput = document.getElementById("email") as HTMLInputElement;
 const loginBtn = document.getElementById("login-btn")!;
@@ -64,38 +64,46 @@ assignBtn.addEventListener("click", () => {
     alert("All sounds already assigned!");
     return;
   }
-  // Fake "object copy" id for now
   const copyId = "copy-" + (Object.keys(assigned).length + 1);
   assigned[copyId] = available[0];
   alert(`Assigned ${available[0]} to ${copyId}`);
 });
 
-// --- Collision simulation ---
+// --- Collision simulation (to be replaced with detection) ---
 function simulateCollision(copyId: string) {
   const sound = assigned[copyId];
   if (sound) play(sound);
 }
 
 // --- Loop recording ---
-let recording: string[] = [];
+let mediaRecorder: MediaRecorder | null = null;
+let recordedChunks: Blob[] = [];
+
 recordBtn.addEventListener("click", () => {
-  if (recording.length > 0) {
-    alert("Stopping loop.");
-    recording = [];
+  if (!localStream) return;
+  if (mediaRecorder && mediaRecorder.state === "recording") {
+    mediaRecorder.stop();
+    alert("Stopped recording.");
   } else {
-    alert("Recording a loop. Trigger some collisions!");
-    // Simulate capturing collisions
-    setInterval(() => {
-      if (Object.keys(assigned).length > 0) {
-        const copyId = Object.keys(assigned)[Math.floor(Math.random() * Object.keys(assigned).length)];
-        simulateCollision(copyId);
-        recording.push(copyId);
-      }
-    }, 500);
+    mediaRecorder = new MediaRecorder(localStream, { mimeType: "video/webm;codecs=vp9,opus" });
+    mediaRecorder.ondataavailable = (event) => {
+      if (event.data.size > 0) recordedChunks.push(event.data);
+    };
+    mediaRecorder.onstop = () => {
+      const blob = new Blob(recordedChunks, { type: "video/webm" });
+      recordedChunks = [];
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "drumloop.webm";
+      a.click();
+    };
+    mediaRecorder.start();
+    alert("Recording started!");
   }
 });
 
-// --- WebRTC Call ---
+// --- WebRTC Call with Supabase Realtime Signaling ---
 callBtn.addEventListener("click", async () => {
   peer = new RTCPeerConnection();
   localStream?.getTracks().forEach(track => peer!.addTrack(track, localStream!));
@@ -104,9 +112,35 @@ callBtn.addEventListener("click", async () => {
     remoteView.srcObject = event.streams[0];
   };
 
+  // Listen for ICE candidates
+  peer.onicecandidate = async (event) => {
+    if (event.candidate) {
+      await supabase.from("signals").insert({
+        type: "candidate",
+        data: JSON.stringify(event.candidate)
+      });
+    }
+  };
+
   const offer = await peer.createOffer();
   await peer.setLocalDescription(offer);
 
-  // NOTE: Here we’d push offer/answer through Supabase Realtime
-  console.log("Offer created:", offer.sdp?.substring(0, 60));
+  await supabase.from("signals").insert({
+    type: "offer",
+    data: JSON.stringify(offer)
+  });
+
+  // Subscribe to answers
+  supabase.channel("webrtc").on("postgres_changes",
+    { event: "INSERT", schema: "public", table: "signals" },
+    async (payload) => {
+      const { type, data } = payload.new;
+      if (type === "answer" && peer && !peer.currentRemoteDescription) {
+        await peer.setRemoteDescription(JSON.parse(data));
+      }
+      if (type === "candidate" && peer) {
+        await peer.addIceCandidate(JSON.parse(data));
+      }
+    }
+  ).subscribe();
 });

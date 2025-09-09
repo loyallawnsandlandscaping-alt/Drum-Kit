@@ -1,110 +1,124 @@
 import { supabase } from "./supabase";
 
-type RTCState = {
-  pc: RTCPeerConnection | null;
-  room: string | null;
-  chan: ReturnType<typeof supabase.channel> | null;
-  local: MediaStream | null;
-  remote: MediaStream | null;
-};
-const S: RTCState = { pc: null, room: null, chan: null, local: null, remote: null };
-
-const RTC_CONFIG: RTCConfiguration = {
-  iceServers: [{ urls: ["stun:stun.l.google.com:19302"] }],
+export type RTCEvents = {
+  onRemoteStream?: (s: MediaStream) => void;
+  onStatus?: (s: 'pending'|'ringing'|'active'|'ended') => void;
+  onError?: (msg: string) => void;
 };
 
-function $<T extends HTMLElement>(id: string) { return document.getElementById(id) as T | null; }
+type SigType = 'offer'|'answer'|'candidate';
 
-async function ensureChannel(room: string) {
-  if (S.chan && S.room === room) return S.chan;
-  if (S.chan) try { await S.chan.unsubscribe(); } catch {}
-  S.room = room;
-  const chan = supabase.channel(`webrtc:${room}`, { config: { broadcast: { ack: true } } });
-  await chan.subscribe(() => {});
-  S.chan = chan;
-  return chan;
-}
+export class DrumRTC {
+  private pc: RTCPeerConnection;
+  private callId: string | null = null;
+  private stopRealtime?: () => void;
+  private uid?: string;
+  private events: RTCEvents;
 
-async function send(type: string, payload: any) {
-  if (!S.chan) throw new Error("No signaling channel");
-  const { data } = await supabase.auth.getUser();
-  await S.chan.send({ type: "broadcast", event: type, payload: { from: data.user?.id, ...payload } });
-}
+  constructor(events: RTCEvents = {}) {
+    this.events = events;
+    this.pc = new RTCPeerConnection({
+      iceServers: [{ urls: ['stun:stun.l.google.com:19302'] }]
+    });
 
-function attachLocal(stream: MediaStream) {
-  S.local = stream;
-  const v = $<HTMLVideoElement>("localVid");
-  const a = $<HTMLAudioElement>("localAudio");
-  if (v) { v.srcObject = stream; v.muted = true; }
-  if (a) { a.srcObject = stream; a.muted = true; }
-}
+    this.pc.ontrack = (e) => {
+      const s = e.streams?.[0];
+      if (s && this.events.onRemoteStream) this.events.onRemoteStream(s);
+    };
 
-function attachRemote(stream: MediaStream) {
-  S.remote = stream;
-  const v = $<HTMLVideoElement>("remoteVid");
-  const a = $<HTMLAudioElement>("remoteAudio");
-  if (v) v.srcObject = stream;
-  if (a) a.srcObject = stream;
-}
-
-export function getRemoteStream() { return S.remote; }
-export function getLocalStream()  { return S.local;  }
-
-export async function joinRoom(room: string) {
-  if (S.pc) throw new Error("Already in a call");
-  if (!room) throw new Error("Room required");
-
-  const chan = await ensureChannel(room);
-  const pc = new RTCPeerConnection(RTC_CONFIG);
-  S.pc = pc;
-
-  // Remote stream sink
-  const remote = new MediaStream();
-  attachRemote(remote);
-  pc.addEventListener("track", (e) => {
-    e.streams[0]?.getTracks().forEach(t => remote.addTrack(t));
-  });
-
-  // Local A/V
-  const local = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
-  attachLocal(local);
-  local.getTracks().forEach(t => pc.addTrack(t, local));
-
-  // ICE
-  pc.onicecandidate = (e) => { if (e.candidate) send("ice", { candidate: e.candidate }); };
-
-  // Signaling
-  chan.on("broadcast", { event: "offer" }, async ({ payload }) => {
-    if (!pc.currentLocalDescription) {
-      await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
-      const ans = await pc.createAnswer();
-      await pc.setLocalDescription(ans);
-      await send("answer", { sdp: ans });
-    }
-  });
-  chan.on("broadcast", { event: "answer" }, async ({ payload }) => {
-    if (pc.signalingState === "have-local-offer") {
-      await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
-    }
-  });
-  chan.on("broadcast", { event: "ice" }, async ({ payload }) => {
-    try { await pc.addIceCandidate(new RTCIceCandidate(payload.candidate)); } catch {}
-  });
-
-  // Try to be the caller
-  const offer = await pc.createOffer();
-  await pc.setLocalDescription(offer);
-  await send("offer", { sdp: offer });
-}
-
-export async function leaveRoom() {
-  try { await S.chan?.unsubscribe(); } catch {}
-  S.chan = null; S.room = null;
-
-  if (S.pc) {
-    S.pc.getSenders().forEach(s => s.track && s.track.stop());
-    S.pc.close(); S.pc = null;
+    this.pc.onicecandidate = async (e) => {
+      if (!e.candidate || !this.callId || !this.uid) return;
+      await this.insertSignal('candidate', { candidate: e.candidate });
+    };
   }
-  if (S.local) { S.local.getTracks().forEach(t => t.stop()); S.local = null; }
-  S.remote = null;
+
+  addLocalStream(stream: MediaStream) {
+    stream.getTracks().forEach(t => this.pc.addTrack(t, stream));
+  }
+
+  private async ensureAuth() {
+    const { data: { user }, error } = await supabase.auth.getUser();
+    if (error || !user) throw new Error('Not authenticated');
+    this.uid = user.id;
+  }
+
+  async createCall(calleeEmail: string) {
+    await this.ensureAuth();
+    const { data: call, error } = await supabase
+      .from('calls')
+      .insert({ caller_id: this.uid, callee_email: calleeEmail, status: 'pending' })
+      .select().single();
+    if (error || !call) throw new Error(error?.message || 'Call create failed');
+    this.callId = call.id;
+    await this.subscribe();
+
+    const offer = await this.pc.createOffer({ offerToReceiveVideo: true, offerToReceiveAudio: true });
+    await this.pc.setLocalDescription(offer);
+    await this.insertSignal('offer', offer);
+    this.events.onStatus?.('ringing');
+  }
+
+  async answerCall(callId: string) {
+    await this.ensureAuth();
+    this.callId = callId;
+    await this.subscribe();
+    this.events.onStatus?.('ringing');
+  }
+
+  async endCall() {
+    try {
+      if (this.callId) await supabase.from('calls').update({ status: 'ended' }).eq('id', this.callId);
+    } finally {
+      try { this.pc.getSenders().forEach(s => s.track?.stop()); } catch {}
+      try { this.pc.close(); } catch {}
+      this.stopRealtime?.();
+      this.events.onStatus?.('ended');
+      this.callId = null;
+    }
+  }
+
+  private async insertSignal(type: SigType, payload: any) {
+    if (!this.callId || !this.uid) return;
+    await supabase.from('signals').insert({
+      call_id: this.callId,
+      sender_id: this.uid,
+      type, payload
+    });
+  }
+
+  private async subscribe() {
+    if (!this.callId) throw new Error('missing call id');
+    const ch = supabase
+      .channel(`signals-${this.callId}`)
+      .on('postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'signals', filter: `call_id=eq.${this.callId}` },
+        async (payload) => {
+          const row: any = payload.new;
+          const me = (await supabase.auth.getUser()).data.user?.id;
+          if (row.sender_id === me) return;
+
+          try {
+            if (row.type === 'offer') {
+              await this.pc.setRemoteDescription(new RTCSessionDescription(row.payload));
+              const ans = await this.pc.createAnswer();
+              await this.pc.setLocalDescription(ans);
+              await this.insertSignal('answer', ans);
+              await supabase.from('calls').update({ status: 'active' }).eq('id', this.callId);
+              this.events.onStatus?.('active');
+            } else if (row.type === 'answer') {
+              if (!this.pc.currentRemoteDescription) {
+                await this.pc.setRemoteDescription(new RTCSessionDescription(row.payload));
+                await supabase.from('calls').update({ status: 'active' }).eq('id', this.callId);
+                this.events.onStatus?.('active');
+              }
+            } else if (row.type === 'candidate') {
+              await this.pc.addIceCandidate(new RTCIceCandidate(row.payload.candidate));
+            }
+          } catch (e: any) {
+            this.events.onError?.(String(e?.message || e));
+          }
+        })
+      .subscribe();
+    this.stopRealtime = () => { try { supabase.removeChannel(ch); } catch {} };
+  }
 }

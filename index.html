@@ -50,6 +50,8 @@
       <div class="toolbar">
         <button id="btnStart" class="primary">Start Camera</button>
         <button id="btnCapture">Take Photo</button>
+        <button id="btnDetect">Detect Overlay</button>
+        <button id="btnUndetect">Undetect Overlay</button>
         <button id="btnDuplicateAll">Duplicate All</button>
       </div>
 
@@ -63,8 +65,16 @@
         <canvas id="detect"></canvas>
       </div>
 
-      <h4>Detected Objects (from photo)</h4>
-      <div class="detected-list" id="detectedList"></div>
+      <div class="row" style="gap:16px; align-items:flex-start; margin-top:10px;">
+        <div>
+          <h4>Detected Objects (from photo)</h4>
+          <div class="detected-list" id="detectedList"></div>
+        </div>
+        <div>
+          <h4>Last Snapshot</h4>
+          <img id="snapshotPreview" alt="Last snapshot" style="max-width:260px; border:1px solid rgba(255,255,255,0.15); border-radius:8px;" />
+        </div>
+      </div>
     </section>
 
     <!-- === Playground / Pads === -->
@@ -109,11 +119,6 @@
       <hr />
 
       <h3>Settings</h3>
-
-      <label class="row">
-        <span>Unlock all sounds (beta)</span>
-        <input type="checkbox" id="betaAll" checked />
-      </label>
 
       <label class="row">
         <span>Hit Cooldown (ms)</span>

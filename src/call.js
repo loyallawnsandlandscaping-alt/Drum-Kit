@@ -1,4 +1,4 @@
-// WebRTC + Supabase Realtime signaling (plain JS)
+// UPDATED call.js (keeps Supabase + UI flow, adds WebRTC DC + lifecycle)
 import { supabase } from "./supabase.js";
 
 let pc = null;
@@ -24,9 +24,6 @@ function ensurePC() {
     const s = pc.connectionState;
     const el = document.getElementById("callStatus");
     if (el) el.textContent = `call: ${s}`;
-    if (s === "failed" || s === "disconnected" || s === "closed") {
-      // keep quiet; battle.js will reset UI on stop
-    }
   };
 
   pc.ondatachannel = (e) => {
@@ -49,9 +46,7 @@ function wireDC() {
     try {
       const msg = JSON.parse(e.data);
       onMsg(msg);
-    } catch {
-      // ignore
-    }
+    } catch {}
   };
 }
 
@@ -71,7 +66,6 @@ async function ensureChannel(id) {
 
   channel.on("broadcast", { event: "signal" }, async ({ payload }) => {
     if (!pc) ensurePC();
-    if (!pc) return;
 
     if (payload.type === "offer") {
       await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
@@ -101,13 +95,12 @@ function broadcast(payload) {
   channel.send({ type: "broadcast", event: "signal", payload });
 }
 
-// Public API
-
+// --- PUBLIC API (same names, extended features) ---
 export async function call(id) {
   await ensureChannel(id);
   ensurePC();
 
-  // create data channel proactively as caller
+  // Caller proactively creates DC
   dc = pc.createDataChannel("battle");
   wireDC();
 
@@ -119,7 +112,6 @@ export async function call(id) {
 export async function answer(id) {
   await ensureChannel(id);
   ensurePC();
-  // ondatachannel will fire when caller’s DC arrives
 }
 
 export function send(obj) {
@@ -138,7 +130,6 @@ export async function hangup() {
   try { if (channel) await channel.unsubscribe(); } catch {}
   channel = null;
   roomId = null;
-
   const el = document.getElementById("callStatus");
   if (el) el.textContent = "call: idle";
 }

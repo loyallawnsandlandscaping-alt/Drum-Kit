@@ -1,12 +1,21 @@
 {
-  "name": "DJ’s Drum-Kit (Diamond Copy)",
-  "short_name": "Drum-Kit",
-  "start_url": "/",
+  "name": "DJ Drum Kit",
+  "short_name": "DJDK",
+  "start_url": ".",
   "display": "standalone",
   "background_color": "#0b0c10",
   "theme_color": "#0b0c10",
+  "orientation": "portrait-primary",
   "icons": [
-    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
-    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png" }
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
   ]
 }

@@ -1,4 +1,4 @@
-// ===== src/app.js (full, updated) =====
+// ===== src/app.js (full, updated with media.js) =====
 
 // Pads / motion scene
 import {
@@ -12,8 +12,11 @@ import {
 // Recorder (looping)
 import { RecorderEnhance } from "./lib/recorder.js";
 
-// Audio engine (play sounds by pad/copy id)
+// Audio engine
 import * as Audio from "./audioEngine.js";
+
+// Unified media (video + audio arm after snapshot)
+import { startCamera, takeSnapshot } from "./media.js";
 
 // Calling + battle
 import * as RTC from "./call.js";
@@ -56,8 +59,7 @@ initPads(videoEl, overlay);
 // ---------- Camera ----------
 btnStart?.addEventListener("click", async () => {
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-    videoEl.srcObject = stream;
+    await startCamera(videoEl);
     const s = document.getElementById("camStatus");
     if (s) s.textContent = "camera: live";
   } catch (err) {
@@ -65,21 +67,25 @@ btnStart?.addEventListener("click", async () => {
   }
 });
 
-// Click to place a duplicate pad
-btnCapture?.addEventListener("click", () => enablePlacing());
+// ---------- Capture (Photo → arm audio → place pads) ----------
+btnCapture?.addEventListener("click", async () => {
+  try {
+    // Take a photo; this will ARM AUDIO when done
+    await takeSnapshot(videoEl);
+  } catch {
+    // non-fatal; still allow placing pads
+  }
+  // Preserve your existing UX: Capture then place
+  enablePlacing();
+});
 
-// If you have a “Duplicate All” action, you can wire it here (no-op placeholder)
-// btnDuplicateAll?.addEventListener("click", () => { /* your existing logic */ });
+// If you have a “Duplicate All” action, wire your existing logic here
+// btnDuplicateAll?.addEventListener("click", () => { /* your logic */ });
 
 // ---------- Pad hit -> audio + recorder + battle ----------
 onCollision((copyId) => {
-  // play sound
   try { Audio.playPad(copyId); } catch {}
-
-  // capture into loop
   try { RecorderEnhance.note(copyId); } catch {}
-
-  // BATTLE: count this hit if a battle is active
   try { registerLocalHit(copyId); } catch {}
 });
 
@@ -138,8 +144,7 @@ callBtn?.addEventListener("click", async () => {
   callStatus && (callStatus.textContent = "calling…");
   await RTC.call(id);
   if (hangBtn) hangBtn.disabled = false;
-
-  // Optional: auto-start a battle once call initiates (comment out if you don’t want this)
+  // Optional: auto-start battle
   // startBattle(60);
 });
 
@@ -150,8 +155,7 @@ answerBtn?.addEventListener("click", async () => {
   callStatus && (callStatus.textContent = "answering…");
   await RTC.answer(id);
   if (hangBtn) hangBtn.disabled = false;
-
-  // Optional: auto-start battle on answer
+  // Optional: auto-start battle
   // startBattle(60);
 });
 
@@ -159,7 +163,6 @@ hangBtn?.addEventListener("click", async () => {
   await RTC.hangup();
   callStatus && (callStatus.textContent = "call: idle");
   if (hangBtn) hangBtn.disabled = true;
-  // stop battle when hanging up (safe even if not active)
   try { stopBattle(); } catch {}
 });
 
@@ -171,7 +174,7 @@ window.addEventListener("beforeinstallprompt", (e) => {
   btnInstall?.addEventListener("click", () => deferred.prompt(), { once: true });
 });
 
-// ---------- Reset cache (service worker + caches) ----------
+// ---------- Reset cache ----------
 btnReset?.addEventListener("click", async () => {
   try {
     if ("caches" in window) {
@@ -199,3 +202,7 @@ btnDismiss?.addEventListener("click", () => {
 
 // ---------- Footer year ----------
 if (yearEl) yearEl.textContent = String(new Date().getFullYear());
+
+// ---------- Optional prewarm (kept lightweight) ----------
+Audio.initAudio().catch(()=>{});
+window.addEventListener("pointerdown", () => Audio.ensureUnlocked(), { once: true });

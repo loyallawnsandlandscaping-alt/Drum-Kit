@@ -1,4 +1,4 @@
-// ===== src/app.js (detect/undetect overlay + snapshot persistence) =====
+// src/app.js
 
 import {
   initPads,
@@ -25,162 +25,98 @@ import {
 import * as RTC from "./call.js";
 import { startBattle, stopBattle, registerLocalHit } from "./battle.js";
 
-// ---------- DOM ----------
+// DOM
 const videoEl = document.getElementById("camera");
 const overlay = document.getElementById("frame");
 const detectOverlay = document.getElementById("detect");
-
-const cameraSelect = document.getElementById("cameraSelect");
-const btnSwitchCam = document.getElementById("btnSwitchCam");
-const btnMirror = document.getElementById("btnMirror");
 
 const btnStart = document.getElementById("btnStart");
 const btnCapture = document.getElementById("btnCapture");
 const btnDetect = document.getElementById("btnDetect");
 const btnUndetect = document.getElementById("btnUndetect");
+const btnReapplyPads = document.getElementById("btnReapplyPads");
 
+const cameraSelect = document.getElementById("cameraSelect");
+const btnSwitchCam = document.getElementById("btnSwitchCam");
+const btnMirror = document.getElementById("btnMirror");
+
+const callBtn = document.getElementById("btnCall");
+const answerBtn = document.getElementById("btnAnswer");
+const hangBtn = document.getElementById("btnHangup");
+const room = document.getElementById("roomId");
+const callStatus = document.getElementById("callStatus");
+
+const cooldown = document.getElementById("cooldown");
+const motionThresh = document.getElementById("motionThresh");
+const loopLen = document.getElementById("loopLen");
 const btnRecord = document.getElementById("btnRecord");
 const btnStopRec = document.getElementById("btnStopRec");
 const btnPlayLoop = document.getElementById("btnPlayLoop");
 const btnStopLoop = document.getElementById("btnStopLoop");
 
-const cooldown = document.getElementById("cooldown");
-const motionThresh = document.getElementById("motionThresh");
-const loopLen = document.getElementById("loopLen");
-
-const room = document.getElementById("roomId");
-const callBtn = document.getElementById("btnCall");
-const answerBtn = document.getElementById("btnAnswer");
-const hangBtn = document.getElementById("btnHangup");
-const callStatus = document.getElementById("callStatus");
-
-const btnInstall = document.getElementById("btnInstall");
-const btnReset = document.getElementById("btnReset");
-
-const btnGrant = document.getElementById("btnGrant");
-const btnDismiss = document.getElementById("btnDismiss");
-
-const yearEl = document.getElementById("year");
 const detectedList = document.getElementById("detectedList");
 const snapshotPreview = document.getElementById("snapshotPreview");
 
-// ---------- State for snapshot & detections ----------
-let lastSnap = /** @type {{blob:Blob,url:string,canvas:HTMLCanvasElement}|null} */(null);
-let lastDetections = /** @type {Array<{label:string,score:number,bbox:number[]}>} */([]);
-let isMirrored = true; // default to front camera view
+const btnInstall = document.getElementById("btnInstall");
+const btnReset = document.getElementById("btnReset");
+const btnGrant = document.getElementById("btnGrant");
+const btnDismiss = document.getElementById("btnDismiss");
+const yearEl = document.getElementById("year");
 
-// ---------- Init pads overlay ----------
+// state
+let lastDetections = [];
+let isMirrored = true;
+
+// init
 initPads(videoEl, overlay);
-setMirror(isMirrored);
+Audio.initAudio().catch(()=>{});
+window.addEventListener("pointerdown", () => Audio.ensureUnlocked(), { once: true });
 
-// ---------- Helpers ----------
-function sizeOverlayToVideo() {
-  const rect = videoEl.getBoundingClientRect();
-  [overlay, detectOverlay].forEach(c => {
-    if (!c) return;
-    c.width = rect.width;
-    c.height = rect.height;
-    c.style.width = rect.width + "px";
-    c.style.height = rect.height + "px";
-    c.style.position = "absolute";
-    c.style.left = 0; c.style.top = 0;
-    c.style.pointerEvents = "none";
-  });
-}
-new ResizeObserver(sizeOverlayToVideo).observe(videoEl);
+// hits -> audio + recorder + battle
+onCollision((copyId) => {
+  try { Audio.playPad(copyId); } catch {}
+  try { RecorderEnhance.note(copyId); } catch {}
+  try { registerLocalHit(copyId); } catch {}
+});
 
-function renderDetections(detections) {
-  sizeOverlayToVideo();
-  const ctx = detectOverlay.getContext("2d");
-  ctx.clearRect(0,0,detectOverlay.width, detectOverlay.height);
-
-  // scale snapshot bbox → current video CSS space
-  const scaleX = detectOverlay.width / (videoEl.videoWidth || detectOverlay.width);
-  const scaleY = detectOverlay.height / (videoEl.videoHeight || detectOverlay.height);
-
-  ctx.lineWidth = 2;
-  ctx.font = "12px ui-sans-serif, system-ui";
-
-  detections.forEach((d) => {
-    let [x,y,w,h] = d.bbox;
-    // if preview is mirrored, flip X for overlay too
-    if (isMirrored) {
-      const snapW = videoEl.videoWidth || detectOverlay.width;
-      const xRight = x + w;
-      x = snapW - xRight;
-    }
-    const rx = x * scaleX, ry = y * scaleY, rw = w * scaleX, rh = h * scaleY;
-    ctx.strokeStyle = "rgba(255,183,77,0.95)"; // warm burst
-    ctx.fillStyle = "rgba(255,183,77,0.12)";
-    ctx.strokeRect(rx, ry, rw, rh);
-    ctx.fillRect(rx, ry, rw, rh);
-    ctx.fillStyle = "rgba(231,231,234,0.95)";
-    ctx.fillText(`${d.label} ${(d.score*100|0)}%`, rx + 6, ry + 14);
-  });
-}
-
-function clearDetections() {
-  const ctx = detectOverlay.getContext("2d");
-  ctx.clearRect(0,0,detectOverlay.width, detectOverlay.height);
-  detectedList.innerHTML = "";
-}
-
-function renderDetectedList(detections) {
-  detectedList.innerHTML = "";
-  detections.slice(0, 24).forEach((d, i) => {
-    const div = document.createElement("div");
-    div.className = "pill";
-    div.textContent = `#${i+1} ${d.label} (${(d.score*100|0)}%)`;
-    detectedList.appendChild(div);
-  });
-}
-
-function showSnapshotPreview(url) {
-  if (snapshotPreview) {
-    snapshotPreview.src = url || "";
-    snapshotPreview.style.display = url ? "block" : "none";
-  }
-}
-
-// ---------- Camera ----------
+// camera start (front)
 btnStart?.addEventListener("click", async () => {
   try {
     await startCamera(videoEl, { video: { facingMode: "user" }, audio: false });
     isMirrored = true;
-    setMirror(isMirrored);
+    setMirror(true);
     const s = document.getElementById("camStatus");
     if (s) s.textContent = "camera: live";
-    await populateCameras();   // fill dropdown once permission granted
-  } catch (err) {
-    alert("Camera permission needed: " + (err?.message || err));
+    await populateCameras();
+  } catch (e) {
+    alert("Camera permission needed: " + (e?.message || e));
   }
 });
 
 async function populateCameras() {
   const devices = await listDevices();
   cameraSelect.innerHTML = "";
-  for (const d of devices) {
+  devices.forEach(d => {
     const opt = document.createElement("option");
     opt.value = d.deviceId;
     opt.textContent = d.label || "Camera";
     cameraSelect.appendChild(opt);
-  }
+  });
 }
+
 cameraSelect?.addEventListener("change", async (e) => {
   const id = e.target.value;
   await switchCamera(videoEl, id);
-  // deviceId doesn't tell us facing; keep current mirroring
   setMirror(isMirrored);
 });
+
 btnSwitchCam?.addEventListener("click", async () => {
-  await switchCamera(videoEl);          // toggles front/back
-  isMirrored = !isMirrored;             // flip mirror flag
-  setMirror(isMirrored);                // keep pads active; just update mirror math
-  // keep overlay sizes consistent
-  sizeOverlayToVideo();
+  await switchCamera(videoEl);         // toggles front/back stream
+  isMirrored = !isMirrored;            // keep pad math correct
+  setMirror(isMirrored);
 });
 
-// ---------- Mirror (tab capture) ----------
+// optional screen mirror
 btnMirror?.addEventListener("click", async () => {
   const stream = await startScreenMirror();
   if (!stream) return;
@@ -193,58 +129,41 @@ btnMirror?.addEventListener("click", async () => {
   stream.getVideoTracks()[0].addEventListener("ended", () => prev.remove());
 });
 
-// ---------- Capture (photo → detect → draw boxes → replace pads) ----------
+// snapshot -> detect -> replace pads
 btnCapture?.addEventListener("click", async () => {
   clearDetections();
-
+  let snap = null;
   try {
-    lastSnap = await takeSnapshot(videoEl); // arms audio too
-    showSnapshotPreview(lastSnap.url);
-  } catch (e) {
-    // if snapshot fails, still allow pad placing
-    lastSnap = null;
-    showSnapshotPreview("");
-  }
+    snap = await takeSnapshot(videoEl); // arms audio too
+    if (snapshotPreview) {
+      snapshotPreview.src = snap.url;
+      snapshotPreview.style.display = "block";
+    }
+  } catch {}
 
-  if (lastSnap?.canvas) {
+  if (snap?.canvas) {
     try {
-      lastDetections = await detectOnCanvas(lastSnap.canvas);
+      lastDetections = await detectOnCanvas(snap.canvas);
       renderDetections(lastDetections);
       renderDetectedList(lastDetections);
-
-      // Make ONLY these objects relevant until next shot:
       replaceCopiesFromDetections(lastDetections, videoEl, { mirror: isMirrored });
-    } catch (e) {
-      // model not loaded or detection failed; keep going
-      lastDetections = [];
-    }
+    } catch { lastDetections = []; }
   }
-
-  // Preserve UX: after photo/detection, enable placing pads manually if desired
   enablePlacing();
 });
 
-// ---------- Detect / Undetect overlay without changing pads ----------
 btnDetect?.addEventListener("click", () => {
-  if (lastDetections && lastDetections.length) {
-    renderDetections(lastDetections);
-    renderDetectedList(lastDetections);
-  }
+  if (lastDetections.length) renderDetections(lastDetections);
 });
 
-btnUndetect?.addEventListener("click", () => {
-  // Hide detection overlay and list, but DO NOT touch pads
-  clearDetections();
+btnUndetect?.addEventListener("click", clearDetections);
+
+btnReapplyPads?.addEventListener("click", () => {
+  if (!lastDetections.length) return;
+  replaceCopiesFromDetections(lastDetections, videoEl, { mirror: isMirrored });
 });
 
-// ---------- Pad hit -> audio + recorder + battle ----------
-onCollision((copyId) => {
-  try { Audio.playPad(copyId); } catch {}
-  try { RecorderEnhance.note(copyId); } catch {}
-  try { registerLocalHit(copyId); } catch {}
-});
-
-// ---------- Recorder controls ----------
+// recorder + loop
 btnRecord?.addEventListener("click", () => {
   RecorderEnhance.start();
   if (btnRecord) btnRecord.disabled = true;
@@ -260,82 +179,95 @@ btnStopRec?.addEventListener("click", () => {
 btnPlayLoop?.addEventListener("click", () => RecorderEnhance.playLoop());
 btnStopLoop?.addEventListener("click", () => RecorderEnhance.stopLoop());
 
-// Loop length slider
 if (loopLen) {
-  const v = parseInt(loopLen.value, 10);
-  if (!Number.isNaN(v)) RecorderEnhance.setLoopSeconds(v);
-  loopLen.addEventListener("input", () => {
-    const n = parseInt(loopLen.value, 10);
-    if (!Number.isNaN(n)) RecorderEnhance.setLoopSeconds(n);
-  });
+  const v = +loopLen.value; if (!Number.isNaN(v)) RecorderEnhance.setLoopSeconds(v);
+  loopLen.addEventListener("input", () => { const n = +loopLen.value; if (!Number.isNaN(n)) RecorderEnhance.setLoopSeconds(n); });
 }
-
-// ---------- Drummer sliders ----------
 if (cooldown) {
-  const v = parseInt(cooldown.value, 10);
-  if (!Number.isNaN(v)) setCooldown(v);
-  cooldown.addEventListener("input", () => {
-    const n = parseInt(cooldown.value, 10);
-    if (!Number.isNaN(n)) setCooldown(n);
-  });
+  const v = +cooldown.value; if (!Number.isNaN(v)) setCooldown(v);
+  cooldown.addEventListener("input", () => { const n = +cooldown.value; if (!Number.isNaN(n)) setCooldown(n); });
 }
 if (motionThresh) {
-  const v = parseInt(motionThresh.value, 10);
-  if (!Number.isNaN(v)) setSensitivity(v);
-  motionThresh.addEventListener("input", () => {
-    const n = parseInt(motionThresh.value, 10);
-    if (!Number.isNaN(n)) setSensitivity(n);
-  });
+  const v = +motionThresh.value; if (!Number.isNaN(v)) setSensitivity(v);
+  motionThresh.addEventListener("input", () => { const n = +motionThresh.value; if (!Number.isNaN(n)) setSensitivity(n); });
 }
 
-// ---------- Calls ----------
+// calls (Supabase signaling)
 callBtn?.addEventListener("click", async () => {
-  if (!room) return;
   const id = room.value?.trim();
   if (!id) return;
-  callStatus && (callStatus.textContent = "calling…");
+  if (callStatus) callStatus.textContent = "calling…";
   await RTC.call(id);
   if (hangBtn) hangBtn.disabled = false;
 });
 answerBtn?.addEventListener("click", async () => {
-  if (!room) return;
   const id = room.value?.trim();
   if (!id) return;
-  callStatus && (callStatus.textContent = "answering…");
+  if (callStatus) callStatus.textContent = "answering…";
   await RTC.answer(id);
   if (hangBtn) hangBtn.disabled = false;
 });
 hangBtn?.addEventListener("click", async () => {
   await RTC.hangup();
-  callStatus && (callStatus.textContent = "call: idle");
+  if (callStatus) callStatus.textContent = "call: idle";
   if (hangBtn) hangBtn.disabled = true;
-  try { stopBattle(); } catch {}
 });
 
-// ---------- PWA install ----------
+// detection overlay helpers
+function renderDetections(detections) {
+  const c = detectOverlay, ctx = c.getContext("2d");
+  c.width = videoEl.clientWidth; c.height = videoEl.clientHeight;
+  ctx.clearRect(0,0,c.width,c.height);
+  const sx = c.width / (videoEl.videoWidth || c.width);
+  const sy = c.height / (videoEl.videoHeight || c.height);
+  ctx.lineWidth = 2; ctx.font = "12px ui-sans-serif, system-ui";
+  detections.forEach(d => {
+    let [x,y,w,h] = d.bbox;
+    if (isMirrored) {
+      const snapW = videoEl.videoWidth || c.width;
+      const xRight = x + w;
+      x = snapW - xRight;
+    }
+    const rx = x*sx, ry = y*sy, rw = w*sx, rh = h*sy;
+    ctx.strokeStyle = "rgba(255,183,77,0.95)";
+    ctx.fillStyle = "rgba(255,183,77,0.12)";
+    ctx.strokeRect(rx, ry, rw, rh); ctx.fillRect(rx, ry, rw, rh);
+    ctx.fillStyle = "rgba(231,231,234,0.95)";
+    ctx.fillText(`${d.label} ${(d.score*100|0)}%`, rx+6, ry+14);
+  });
+}
+
+function renderDetectedList(items) {
+  detectedList.innerHTML = "";
+  items.slice(0, 24).forEach((d,i) => {
+    const div = document.createElement("div");
+    div.className = "pill";
+    div.textContent = `#${i+1} ${d.label} (${(d.score*100|0)}%)`;
+    detectedList.appendChild(div);
+  });
+}
+
+function clearDetections() {
+  const c = detectOverlay, ctx = c.getContext("2d");
+  ctx.clearRect(0,0,c.width,c.height);
+  detectedList.innerHTML = "";
+}
+
+// PWA bits
 window.addEventListener("beforeinstallprompt", (e) => {
   e.preventDefault();
   const deferred = e;
-  if (btnInstall) btnInstall.disabled = false;
   btnInstall?.addEventListener("click", () => deferred.prompt(), { once: true });
 });
 
-// ---------- Reset cache ----------
 btnReset?.addEventListener("click", async () => {
   try {
-    if ("caches" in window) {
-      const names = await caches.keys();
-      for (const n of names) await caches.delete(n);
-    }
-    if ("serviceWorker" in navigator) {
-      const regs = await navigator.serviceWorker.getRegistrations();
-      for (const r of regs) await r.unregister();
-    }
+    if ("caches" in window) for (const n of await caches.keys()) await caches.delete(n);
+    if ("serviceWorker" in navigator) for (const r of await navigator.serviceWorker.getRegistrations()) await r.unregister();
   } catch {}
   location.reload();
 });
 
-// ---------- Onboarding ----------
 btnGrant?.addEventListener("click", () => {
   btnStart?.click();
   const ob = document.getElementById("onboard");
@@ -346,9 +278,4 @@ btnDismiss?.addEventListener("click", () => {
   ob && ob.classList.add("hidden");
 });
 
-// ---------- Footer year ----------
 if (yearEl) yearEl.textContent = String(new Date().getFullYear());
-
-// ---------- Prewarm audio (light) ----------
-Audio.initAudio().catch(()=>{});
-window.addEventListener("pointerdown", () => Audio.ensureUnlocked(), { once: true });
